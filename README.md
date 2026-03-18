@@ -136,6 +136,16 @@ It also prints the aggregated domain matrix immediately.
   - required when `GENAI_DATABASE_BACKEND=postgres`
 - `GENAI_SQLITE_DB_PATH`
   - optional when using SQLite
+- `BASIC_AUTH_USER`
+  - optional, enable HTTP Basic Auth when set together with `BASIC_AUTH_PASSWORD`
+- `BASIC_AUTH_PASSWORD`
+  - optional, enable HTTP Basic Auth when set together with `BASIC_AUTH_USER`
+
+When Basic Auth is enabled:
+- `/health` stays open for Render health checks
+- `/`, `/docs`, `/openapi.json`, `/api/v1/*`, and static assets require credentials
+
+This is useful for short-lived private sharing on Render without building a full login system.
 
 ## Health Check
 

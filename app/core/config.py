@@ -12,6 +12,12 @@ class AppSettings:
     app_host: str
     app_port: int
     worker_poll_interval_seconds: float
+    basic_auth_user: str | None
+    basic_auth_password: str | None
+
+    @property
+    def basic_auth_enabled(self) -> bool:
+        return bool(self.basic_auth_user and self.basic_auth_password)
 
 
 def get_settings() -> AppSettings:
@@ -27,4 +33,6 @@ def get_settings() -> AppSettings:
         app_host=os.getenv("GENAI_APP_HOST", "127.0.0.1"),
         app_port=int(os.getenv("GENAI_APP_PORT", "8000")),
         worker_poll_interval_seconds=float(os.getenv("GENAI_WORKER_POLL_INTERVAL", "5")),
+        basic_auth_user=os.getenv("BASIC_AUTH_USER"),
+        basic_auth_password=os.getenv("BASIC_AUTH_PASSWORD"),
     )
