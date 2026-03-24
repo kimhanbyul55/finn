@@ -35,6 +35,8 @@ def initialize_sqlite_database(db_path: Path | None = None) -> Path:
                 link TEXT NOT NULL,
                 source TEXT,
                 published_at TEXT,
+                provided_article_text TEXT,
+                provided_summary_text TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -75,6 +77,18 @@ def initialize_sqlite_database(db_path: Path | None = None) -> Path:
             );
 
             """
+        )
+        _ensure_column(
+            connection,
+            table_name="raw_news",
+            column_name="provided_article_text",
+            column_sql="TEXT",
+        )
+        _ensure_column(
+            connection,
+            table_name="raw_news",
+            column_name="provided_summary_text",
+            column_sql="TEXT",
         )
         _ensure_column(
             connection,

@@ -14,7 +14,11 @@ from app.db import (
     initialize_sqlite_database,
 )
 from app.schemas.enrichment import ArticleEnrichmentRequest
-from app.schemas.ingestion import EnrichmentJobRecord, EnrichmentJobStatus
+from app.schemas.ingestion import (
+    DirectTextIngestionRequest,
+    EnrichmentJobRecord,
+    EnrichmentJobStatus,
+)
 from app.schemas.mixed import TickerSentimentObservation
 from app.schemas.operations import (
     CountMetric,
@@ -98,6 +102,9 @@ class EnrichmentRepository(Protocol):
     def get_operational_stats(self) -> OperationalStatsResponse:
         """Return aggregated operational metrics for fetch failures and job states."""
 
+    def clear_raw_news_text_inputs(self, news_id: str) -> None:
+        """Remove provider-supplied raw text after processing is finished."""
+
 
 @dataclass(slots=True)
 class InMemoryEnrichmentRepository:
@@ -112,6 +119,19 @@ class InMemoryEnrichmentRepository:
 
     def get_raw_news(self, news_id: str) -> ArticleEnrichmentRequest | None:
         return self._raw_news_by_id.get(news_id)
+
+    def clear_raw_news_text_inputs(self, news_id: str) -> None:
+        raw_news = self._raw_news_by_id.get(news_id)
+        if not isinstance(raw_news, DirectTextIngestionRequest):
+            return
+        self._raw_news_by_id[news_id] = ArticleEnrichmentRequest(
+            news_id=raw_news.news_id,
+            title=raw_news.title,
+            link=raw_news.link,
+            ticker=raw_news.ticker,
+            source=raw_news.source,
+            published_at=raw_news.published_at,
+        )
 
     def get_active_job(self, news_id: str) -> EnrichmentJobRecord | None:
         active_jobs = [
@@ -308,6 +328,16 @@ class SQLiteEnrichmentRepository:
     def upsert_raw_news(self, raw_news: ArticleEnrichmentRequest) -> None:
         now = _utc_now()
         tickers = raw_news.ticker or []
+        article_text = (
+            raw_news.article_text
+            if isinstance(raw_news, DirectTextIngestionRequest)
+            else None
+        )
+        summary_text = (
+            raw_news.summary_text
+            if isinstance(raw_news, DirectTextIngestionRequest)
+            else None
+        )
         with connect_sqlite(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
@@ -318,14 +348,18 @@ class SQLiteEnrichmentRepository:
                     link,
                     source,
                     published_at,
+                    provided_article_text,
+                    provided_summary_text,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(news_id) DO UPDATE SET
                     title = excluded.title,
                     link = excluded.link,
                     source = excluded.source,
                     published_at = excluded.published_at,
+                    provided_article_text = excluded.provided_article_text,
+                    provided_summary_text = excluded.provided_summary_text,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -334,6 +368,8 @@ class SQLiteEnrichmentRepository:
                     str(raw_news.link),
                     raw_news.source,
                     _datetime_to_storage(raw_news.published_at),
+                    article_text,
+                    summary_text,
                     now,
                     now,
                 ),
@@ -354,7 +390,14 @@ class SQLiteEnrichmentRepository:
         with connect_sqlite(self.db_path) as connection:
             row = connection.execute(
                 """
-                SELECT news_id, title, link, source, published_at
+                SELECT
+                    news_id,
+                    title,
+                    link,
+                    source,
+                    published_at,
+                    provided_article_text,
+                    provided_summary_text
                 FROM raw_news
                 WHERE news_id = ?
                 """,
@@ -372,14 +415,30 @@ class SQLiteEnrichmentRepository:
                 (news_id,),
             ).fetchall()
 
-        return ArticleEnrichmentRequest(
+        return _build_raw_news_request(
             news_id=row["news_id"],
             title=row["title"],
             link=row["link"],
             ticker=[item["ticker"] for item in ticker_rows] or None,
             source=row["source"],
             published_at=row["published_at"],
+            article_text=row["provided_article_text"],
+            summary_text=row["provided_summary_text"],
         )
+
+    def clear_raw_news_text_inputs(self, news_id: str) -> None:
+        with connect_sqlite(self.db_path) as connection:
+            connection.execute(
+                """
+                UPDATE raw_news
+                SET
+                    provided_article_text = NULL,
+                    provided_summary_text = NULL,
+                    updated_at = ?
+                WHERE news_id = ?
+                """,
+                (_utc_now(), news_id),
+            )
 
     def get_active_job(self, news_id: str) -> EnrichmentJobRecord | None:
         with connect_sqlite(self.db_path) as connection:
@@ -753,6 +812,16 @@ class PostgresEnrichmentRepository:
     def upsert_raw_news(self, raw_news: ArticleEnrichmentRequest) -> None:
         now = _utc_datetime()
         tickers = raw_news.ticker or []
+        article_text = (
+            raw_news.article_text
+            if isinstance(raw_news, DirectTextIngestionRequest)
+            else None
+        )
+        summary_text = (
+            raw_news.summary_text
+            if isinstance(raw_news, DirectTextIngestionRequest)
+            else None
+        )
         with connect_postgres(self.dsn) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -763,14 +832,18 @@ class PostgresEnrichmentRepository:
                         link,
                         source,
                         published_at,
+                        provided_article_text,
+                        provided_summary_text,
                         created_at,
                         updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT(news_id) DO UPDATE SET
                         title = EXCLUDED.title,
                         link = EXCLUDED.link,
                         source = EXCLUDED.source,
                         published_at = EXCLUDED.published_at,
+                        provided_article_text = EXCLUDED.provided_article_text,
+                        provided_summary_text = EXCLUDED.provided_summary_text,
                         updated_at = EXCLUDED.updated_at
                     """,
                     (
@@ -779,6 +852,8 @@ class PostgresEnrichmentRepository:
                         str(raw_news.link),
                         raw_news.source,
                         raw_news.published_at,
+                        article_text,
+                        summary_text,
                         now,
                         now,
                     ),
@@ -801,7 +876,14 @@ class PostgresEnrichmentRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT news_id, title, link, source, published_at
+                    SELECT
+                        news_id,
+                        title,
+                        link,
+                        source,
+                        published_at,
+                        provided_article_text,
+                        provided_summary_text
                     FROM raw_news
                     WHERE news_id = %s
                     """,
@@ -821,14 +903,31 @@ class PostgresEnrichmentRepository:
                 )
                 ticker_rows = cursor.fetchall()
 
-        return ArticleEnrichmentRequest(
+        return _build_raw_news_request(
             news_id=row["news_id"],
             title=row["title"],
             link=row["link"],
             ticker=[item["ticker"] for item in ticker_rows] or None,
             source=row["source"],
             published_at=row["published_at"],
+            article_text=row["provided_article_text"],
+            summary_text=row["provided_summary_text"],
         )
+
+    def clear_raw_news_text_inputs(self, news_id: str) -> None:
+        with connect_postgres(self.dsn) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE raw_news
+                    SET
+                        provided_article_text = NULL,
+                        provided_summary_text = NULL,
+                        updated_at = %s
+                    WHERE news_id = %s
+                    """,
+                    (_utc_datetime(), news_id),
+                )
 
     def get_active_job(self, news_id: str) -> EnrichmentJobRecord | None:
         with connect_postgres(self.dsn) as connection:
@@ -1308,6 +1407,39 @@ def _build_operational_stats(
         fetch_failure_category_counts=_sorted_count_metrics(fetch_failure_category_counts),
         top_failure_domains=_sorted_domain_metrics(domain_failure_counts),
         publisher_outcomes=_sorted_outcome_metrics(domain_outcome_counts),
+    )
+
+
+def _build_raw_news_request(
+    *,
+    news_id: str,
+    title: str,
+    link: str,
+    ticker: list[str] | None,
+    source: str | None,
+    published_at,
+    article_text: str | None,
+    summary_text: str | None,
+) -> ArticleEnrichmentRequest:
+    if article_text or summary_text:
+        return DirectTextIngestionRequest(
+            news_id=news_id,
+            title=title,
+            link=link,
+            ticker=ticker,
+            source=source,
+            published_at=published_at,
+            article_text=article_text,
+            summary_text=summary_text,
+        )
+
+    return ArticleEnrichmentRequest(
+        news_id=news_id,
+        title=title,
+        link=link,
+        ticker=ticker,
+        source=source,
+        published_at=published_at,
     )
 
 

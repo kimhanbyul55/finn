@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from app.core.logging import get_logger, log_event
 from app.repositories import EnrichmentRepository, SaveEnrichmentRequest
 from app.schemas.article_fetch import ArticleFetchResult, ArticleFetchStatus
+from app.schemas.article_fetch import ArticleTextSource
 from app.schemas.enrichment import ArticleEnrichmentRequest
 from app.schemas.mixed import TickerSentimentObservation
 from app.schemas.storage import (
@@ -40,6 +41,33 @@ class EnrichmentOrchestrator:
         self._repository = repository
 
     def run(self, request: ArticleEnrichmentRequest) -> EnrichmentStoragePayload:
+        return self._run_pipeline(request=request, provided_text=None)
+
+    def run_with_text(
+        self,
+        request: ArticleEnrichmentRequest,
+        *,
+        article_text: str | None = None,
+        summary_text: str | None = None,
+    ) -> EnrichmentStoragePayload:
+        provided_text = (article_text or "").strip() or (summary_text or "").strip() or None
+        return self._run_pipeline(
+            request=request,
+            provided_text=provided_text,
+            text_source=(
+                ArticleTextSource.PROVIDED_ARTICLE_TEXT
+                if article_text and article_text.strip()
+                else ArticleTextSource.PROVIDED_SUMMARY_TEXT
+            ) if provided_text is not None else None,
+        )
+
+    def _run_pipeline(
+        self,
+        *,
+        request: ArticleEnrichmentRequest,
+        provided_text: str | None,
+        text_source: ArticleTextSource | None = None,
+    ) -> EnrichmentStoragePayload:
         analyzed_at = datetime.now(timezone.utc)
         tracker = PipelineStatusTracker()
         log_event(
@@ -51,7 +79,12 @@ class EnrichmentOrchestrator:
             tickers=request.ticker,
         )
 
-        fetch_result = self._run_fetch_stage(request=request, tracker=tracker)
+        fetch_result = self._run_fetch_stage(
+            request=request,
+            tracker=tracker,
+            provided_text=provided_text,
+            text_source=text_source,
+        )
         cleaned_text = ""
         summary_3lines: list[str] | None = None
         sentiment_result = None
@@ -133,8 +166,42 @@ class EnrichmentOrchestrator:
         *,
         request: ArticleEnrichmentRequest,
         tracker: PipelineStatusTracker,
+        provided_text: str | None = None,
+        text_source: ArticleTextSource | None = None,
     ) -> ArticleFetchResult:
         tracker.start(PipelineStageName.FETCH)
+        if provided_text is not None:
+            source_label = (
+                "article text"
+                if text_source == ArticleTextSource.PROVIDED_ARTICLE_TEXT
+                else "summary text"
+            )
+            log_event(
+                logger,
+                logging.INFO,
+                "article_fetch_skipped_using_provided_text",
+                news_id=request.news_id,
+                link=str(request.link),
+                text_source=text_source.value if text_source is not None else None,
+                raw_text_length=len(provided_text),
+            )
+            tracker.complete(
+                PipelineStageName.FETCH,
+                f"Skipped remote fetch and used directly supplied {source_label}.",
+            )
+            return ArticleFetchResult(
+                link=str(request.link),
+                publisher_domain=request.link.host,
+                final_url=str(request.link),
+                extraction_source=text_source,
+                attempt_count=1,
+                raw_text=provided_text,
+                cleaned_text=provided_text,
+                fetch_status=ArticleFetchStatus.SUCCESS,
+                retryable=False,
+                failure_category=None,
+                error_message=None,
+            )
         try:
             fetch_result = fetch_article_text(str(request.link))
         except Exception as exc:

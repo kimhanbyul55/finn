@@ -9,7 +9,7 @@ import app.api.routes.ingestion as ingestion_route_module
 from app.main import app
 from app.repositories import InMemoryEnrichmentRepository, SaveEnrichmentRequest
 from app.schemas.article_fetch import ArticleFetchResult, ArticleFetchStatus, ArticleTextSource
-from app.schemas.enrichment import ArticleEnrichmentRequest
+from app.schemas.enrichment import ArticleEnrichmentRequest, DirectTextEnrichmentRequest
 from app.schemas.sentiment import (
     AggregationStrategy,
     ChunkSentimentResult,
@@ -234,3 +234,119 @@ def test_enrich_endpoint_returns_external_api_shape(monkeypatch) -> None:
     assert body["xai"]["highlights"][0]["start_char"] == 0
     assert body["xai"]["highlights"][0]["end_char"] == 41
     assert body["error"] is None
+
+
+def test_news_intake_text_worker_and_status_flow(monkeypatch) -> None:
+    repository = InMemoryEnrichmentRepository()
+    service = IngestionService(repository=repository)
+
+    def _run_with_text_and_persist(
+        raw_news: ArticleEnrichmentRequest,
+        *,
+        article_text: str | None = None,
+        summary_text: str | None = None,
+    ) -> EnrichmentStoragePayload:
+        payload = _build_completed_payload(raw_news)
+        payload.fetch_result.extraction_source = ArticleTextSource.PROVIDED_SUMMARY_TEXT
+        repository.save_enrichment_result(
+            SaveEnrichmentRequest(raw_news=raw_news, enrichment=payload)
+        )
+        return payload
+
+    monkeypatch.setattr(ingestion_route_module, "service", service)
+    monkeypatch.setattr(service._orchestrator, "run_with_text", _run_with_text_and_persist)
+
+    client = TestClient(app)
+
+    intake_response = client.post(
+        "/api/v1/news/intake-text",
+        json={
+            "news_id": "e2e-news-text-1",
+            "title": "Company beats earnings estimates",
+            "link": "https://example.com/articles/e2e-news-text-1",
+            "ticker": ["AAPL"],
+            "source": "Licensed Provider",
+            "summary_text": (
+                "Revenue growth stayed ahead of expectations. "
+                "Management highlighted stable demand and improved margins."
+            ),
+        },
+    )
+
+    assert intake_response.status_code == 200
+    intake_payload = intake_response.json()
+    assert intake_payload["queued"] is True
+    assert intake_payload["job"]["status"] == "queued"
+
+    worker_response = client.post("/api/v1/jobs/process-next")
+
+    assert worker_response.status_code == 200
+    worker_payload = worker_response.json()
+    assert worker_payload["processed"] is True
+    assert worker_payload["retry_scheduled"] is False
+    assert worker_payload["analysis_status"] == "completed"
+    assert worker_payload["analysis_outcome"] == "success"
+    assert (
+        worker_payload["enrichment"]["fetch_result"]["extraction_source"]
+        == "provided_summary_text"
+    )
+
+    status_response = client.get("/api/v1/news/e2e-news-text-1")
+    assert status_response.status_code == 200
+    status_payload = status_response.json()
+    assert status_payload["raw_news"]["news_id"] == "e2e-news-text-1"
+    assert "summary_text" not in status_payload["raw_news"]
+
+    stored_raw_news = repository.get_raw_news("e2e-news-text-1")
+    assert stored_raw_news is not None
+    assert not hasattr(stored_raw_news, "summary_text")
+
+
+def test_enrich_text_endpoint_skips_remote_fetch(monkeypatch) -> None:
+    repository = InMemoryEnrichmentRepository()
+    request = DirectTextEnrichmentRequest(
+        news_id="direct-text-news-1",
+        title="Company beats earnings estimates",
+        link="https://example.com/articles/direct-text-news-1",
+        ticker=["AAPL"],
+        source="Reuters",
+        article_text=(
+            "Revenue growth stayed ahead of expectations. "
+            "Management highlighted stable demand and improved margins. "
+            "Investors are watching whether guidance remains intact."
+        ),
+    )
+    payload = _build_completed_payload(request)
+    payload.fetch_result.extraction_source = ArticleTextSource.PROVIDED_ARTICLE_TEXT
+
+    async def _enrich_article_text(_: DirectTextEnrichmentRequest):
+        return build_api_enrichment_response(payload)
+
+    monkeypatch.setattr(
+        enrichment_route_module.service,
+        "enrich_article_text",
+        _enrich_article_text,
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/articles/enrich-text",
+        json={
+            "news_id": "direct-text-news-1",
+            "title": "Company beats earnings estimates",
+            "link": "https://example.com/articles/direct-text-news-1",
+            "ticker": ["AAPL"],
+            "source": "Reuters",
+            "article_text": (
+                "Revenue growth stayed ahead of expectations. "
+                "Management highlighted stable demand and improved margins. "
+                "Investors are watching whether guidance remains intact."
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["outcome"] == "success"
+    assert body["sentiment"]["label"] == "bullish"

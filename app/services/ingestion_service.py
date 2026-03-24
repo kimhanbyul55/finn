@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app.repositories import EnrichmentRepository, create_repository
 from app.schemas.ingestion import EnrichmentJobRecord
 from app.schemas.ingestion import (
+    DirectTextIngestionRequest,
     IngestionAcceptedResponse,
     NewsResultResponse,
     NewsProcessingStatusResponse,
@@ -34,6 +35,18 @@ class IngestionService:
         self,
         payload: RawNewsIngestionRequest,
     ) -> IngestionAcceptedResponse:
+        return await self._ingest_payload(payload)
+
+    async def ingest_article_text(
+        self,
+        payload: DirectTextIngestionRequest,
+    ) -> IngestionAcceptedResponse:
+        return await self._ingest_payload(payload)
+
+    async def _ingest_payload(
+        self,
+        payload: RawNewsIngestionRequest,
+    ) -> IngestionAcceptedResponse:
         self._repository.upsert_raw_news(payload)
 
         active_job = self._repository.get_active_job(payload.news_id)
@@ -49,9 +62,9 @@ class IngestionService:
         return IngestionAcceptedResponse(
             news_id=payload.news_id,
             queued=True,
-            message="Raw news metadata saved and enrichment job queued.",
-            job=job,
-        )
+                message="Raw news metadata saved and enrichment job queued.",
+                job=job,
+            )
 
     async def get_news_status(self, news_id: str) -> NewsProcessingStatusResponse | None:
         raw_news = self._repository.get_raw_news(news_id)
@@ -109,7 +122,14 @@ class IngestionService:
                 job=failed_job,
             )
 
-        enrichment = self._orchestrator.run(raw_news)
+        if isinstance(raw_news, DirectTextIngestionRequest):
+            enrichment = self._orchestrator.run_with_text(
+                raw_news,
+                article_text=raw_news.article_text,
+                summary_text=raw_news.summary_text,
+            )
+        else:
+            enrichment = self._orchestrator.run(raw_news)
 
         if enrichment.analysis_outcome == AnalysisOutcome.FATAL_FAILURE:
             if self._should_retry_job(job=job, analysis_status=enrichment.analysis_status, enrichment=enrichment):
@@ -144,6 +164,9 @@ class IngestionService:
                 job.job_id,
                 analysis_status=enrichment.analysis_status,
             )
+
+        if isinstance(raw_news, DirectTextIngestionRequest):
+            self._repository.clear_raw_news_text_inputs(raw_news.news_id)
 
         return WorkerProcessResponse(
             processed=True,

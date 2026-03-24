@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.ingestion import (
+    DirectTextIngestionRequest,
     IngestionAcceptedResponse,
     NewsResultResponse,
     NewsProcessingStatusResponse,
@@ -24,6 +25,17 @@ async def ingest_raw_news(
     payload: RawNewsIngestionRequest,
 ) -> IngestionAcceptedResponse:
     return await service.ingest_article(payload)
+
+
+@router.post(
+    "/news/intake-text",
+    response_model=IngestionAcceptedResponse,
+    summary="Store licensed article or summary text and queue enrichment",
+)
+async def ingest_raw_news_text(
+    payload: DirectTextIngestionRequest,
+) -> IngestionAcceptedResponse:
+    return await service.ingest_article_text(payload)
 
 
 @router.get(

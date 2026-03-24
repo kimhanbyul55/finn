@@ -78,6 +78,47 @@ Useful flags:
 Detailed validation checklist:
 - [`docs/smoke_test_checklist.md`](/Users/sta/Documents/개발1/docs/smoke_test_checklist.md)
 
+## Direct Text Enrichment
+
+If your upstream news provider can send licensed `article_text` or `summary_text`
+directly, you can skip URL crawling entirely and call:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/articles/enrich-text" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "news_id": "provider-123",
+    "title": "Apple shares rise after earnings",
+    "link": "https://provider.example.com/article/123",
+    "ticker": ["AAPL"],
+    "source": "Licensed Provider",
+    "article_text": "Full licensed article text goes here."
+  }'
+```
+
+You may also send `summary_text` when only a licensed summary/snippet is available.
+The service will analyze the provided text directly without fetching the original URL.
+
+If your backend prefers the existing async queue flow, use the intake endpoint below
+and then process the queued job with the worker just like URL-based ingestion:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/news/intake-text" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "news_id": "provider-124",
+    "title": "Apple shares rise after earnings",
+    "link": "https://provider.example.com/article/124",
+    "ticker": ["AAPL"],
+    "source": "Licensed Provider",
+    "summary_text": "Apple shares rose after better-than-expected earnings."
+  }'
+```
+
+The worker will use the supplied text instead of crawling the URL, and the raw input
+text is cleared from the queued raw-news record after processing finishes so that the
+service retains metadata and derived analysis rather than provider-supplied body text.
+
 ## Domain Matrix
 
 You can save smoke test outputs and aggregate them into a domain-level matrix:

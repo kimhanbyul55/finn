@@ -105,6 +105,25 @@ class ArticleEnrichmentRequest(SchemaModel):
         return normalized or None
 
 
+class DirectTextEnrichmentRequest(ArticleEnrichmentRequest):
+    article_text: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Licensed full article text supplied directly by the upstream provider.",
+    )
+    summary_text: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Licensed summary/snippet text supplied directly by the upstream provider.",
+    )
+
+    @model_validator(mode="after")
+    def validate_text_input(self) -> DirectTextEnrichmentRequest:
+        if not (self.article_text or self.summary_text):
+            raise ValueError("Either article_text or summary_text must be provided.")
+        return self
+
+
 class SummaryLine(SchemaModel):
     line_number: Literal[1, 2, 3] = Field(..., description="1-based line index.")
     text: str = Field(..., min_length=1, description="Single summary line.")

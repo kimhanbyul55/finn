@@ -8,6 +8,7 @@ from pydantic import Field
 from app.schemas.enrichment import (
     ArticleEnrichmentRequest,
     ArticleEnrichmentResponse,
+    DirectTextEnrichmentRequest,
     SchemaModel,
 )
 from app.schemas.storage import AnalysisOutcome, AnalysisStatus, EnrichmentStoragePayload
@@ -23,6 +24,10 @@ class EnrichmentJobStatus(str, Enum):
 
 class RawNewsIngestionRequest(ArticleEnrichmentRequest):
     """Inbound raw-news payload sent by the upstream backend/news ingestion system."""
+
+
+class DirectTextIngestionRequest(DirectTextEnrichmentRequest):
+    """Inbound raw-news payload with licensed text supplied directly by the upstream backend."""
 
 
 class EnrichmentJobRecord(SchemaModel):

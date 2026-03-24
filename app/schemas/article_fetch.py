@@ -26,6 +26,8 @@ class ArticleFetchFailureCategory(str, Enum):
 
 
 class ArticleTextSource(str, Enum):
+    PROVIDED_ARTICLE_TEXT = "provided_article_text"
+    PROVIDED_SUMMARY_TEXT = "provided_summary_text"
     JSON_LD = "json_ld"
     GENERIC_JSON = "generic_json"
     PARAGRAPH_BLOCKS = "paragraph_blocks"

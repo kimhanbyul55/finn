@@ -2,6 +2,7 @@ from app.repositories import EnrichmentRepository, create_repository
 from app.schemas.enrichment import (
     ArticleEnrichmentRequest,
     ArticleEnrichmentResponse,
+    DirectTextEnrichmentRequest,
     EnrichmentStatus,
     ErrorDetail,
     InternalStageStatus,
@@ -33,6 +34,17 @@ class EnrichmentService:
         payload: ArticleEnrichmentRequest,
     ) -> ArticleEnrichmentResponse:
         storage_payload = self._orchestrator.run(payload)
+        return build_api_enrichment_response(storage_payload)
+
+    async def enrich_article_text(
+        self,
+        payload: DirectTextEnrichmentRequest,
+    ) -> ArticleEnrichmentResponse:
+        storage_payload = self._orchestrator.run_with_text(
+            payload,
+            article_text=payload.article_text,
+            summary_text=payload.summary_text,
+        )
         return build_api_enrichment_response(storage_payload)
 
 

@@ -29,9 +29,23 @@ def initialize_postgres_database(dsn: str | None = None) -> str:
                     link TEXT NOT NULL,
                     source TEXT,
                     published_at TIMESTAMPTZ,
+                    provided_article_text TEXT,
+                    provided_summary_text TEXT,
                     created_at TIMESTAMPTZ NOT NULL,
                     updated_at TIMESTAMPTZ NOT NULL
                 )
+                """
+            )
+            cursor.execute(
+                """
+                ALTER TABLE raw_news
+                ADD COLUMN IF NOT EXISTS provided_article_text TEXT
+                """
+            )
+            cursor.execute(
+                """
+                ALTER TABLE raw_news
+                ADD COLUMN IF NOT EXISTS provided_summary_text TEXT
                 """
             )
             cursor.execute(
