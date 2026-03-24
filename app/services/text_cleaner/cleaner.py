@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-MINIMUM_WORD_COUNT = 30
-MINIMUM_CHARACTER_COUNT = 200
+MINIMUM_WORD_COUNT = 1
+MINIMUM_CHARACTER_COUNT = 10
 
 _INTERNAL_WHITESPACE_PATTERN = re.compile(r"[ \t\u00a0]+")
 _MULTI_NEWLINE_PATTERN = re.compile(r"\n{3,}")
