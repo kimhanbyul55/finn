@@ -46,3 +46,15 @@ def test_basic_auth_accepts_valid_credentials(monkeypatch) -> None:
     response = client.get("/", headers=_basic_auth_header("teammate", "temporary-pass"))
 
     assert response.status_code == 200
+
+
+def test_basic_auth_allows_internal_head_probe_but_keeps_get_protected(monkeypatch) -> None:
+    monkeypatch.setenv("BASIC_AUTH_USER", "teammate")
+    monkeypatch.setenv("BASIC_AUTH_PASSWORD", "temporary-pass")
+
+    client = TestClient(app)
+    head_response = client.head("/")
+    get_response = client.get("/")
+
+    assert head_response.status_code == 200
+    assert get_response.status_code == 401

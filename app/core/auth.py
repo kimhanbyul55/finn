@@ -12,6 +12,13 @@ from app.core.config import get_settings
 
 _BASIC_AUTH_REALM: Final[str] = 'Basic realm="Financial News Gen AI Service"'
 _EXEMPT_PATHS: Final[tuple[str, ...]] = ("/health",)
+_LOCAL_PROBE_HOSTS: Final[frozenset[str]] = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
+
+
+def _is_internal_root_probe(request: Request) -> bool:
+    """Allow Render-style local HEAD probes to pass without weakening user-facing auth."""
+    client_host = request.client.host if request.client else None
+    return request.method == "HEAD" and request.url.path == "/" and client_host in _LOCAL_PROBE_HOSTS
 
 
 def basic_auth_required(request: Request) -> bool:
@@ -19,7 +26,7 @@ def basic_auth_required(request: Request) -> bool:
     settings = get_settings()
     if not settings.basic_auth_enabled:
         return False
-    return request.url.path not in _EXEMPT_PATHS
+    return request.url.path not in _EXEMPT_PATHS and not _is_internal_root_probe(request)
 
 
 def unauthorized_basic_auth_response() -> Response:
