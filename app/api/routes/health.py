@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from fastapi.responses import Response
 
 from app.db import get_database_backend, ping_database_backend
 
@@ -9,6 +10,11 @@ router = APIRouter(tags=["health"])
 @router.get("/health", summary="Health check")
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.head("/health", include_in_schema=False)
+async def health_check_head() -> Response:
+    return Response(status_code=200)
 
 
 @router.get("/health/deep", summary="Deep health check")

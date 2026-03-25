@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -501,3 +502,54 @@ def test_enrich_text_endpoint_skips_remote_fetch(monkeypatch) -> None:
     assert body["status"] == "completed"
     assert body["outcome"] == "success"
     assert body["sentiment"]["label"] == "bullish"
+
+
+def test_direct_enrichment_endpoints_are_disabled_on_render_web(monkeypatch) -> None:
+    monkeypatch.setattr(
+        enrichment_route_module,
+        "settings",
+        replace(enrichment_route_module.settings, enable_direct_enrichment_api=False),
+    )
+
+    client = TestClient(app)
+
+    enrich_response = client.post(
+        "/api/v1/articles/enrich",
+        json={
+            "news_id": "render-disabled-enrich-1",
+            "title": "Direct enrich disabled on render",
+            "link": "https://example.com/articles/render-disabled-enrich-1",
+            "ticker": ["AAPL"],
+            "source": "Reuters",
+        },
+    )
+    enrich_text_response = client.post(
+        "/api/v1/articles/enrich-text",
+        json={
+            "news_id": "render-disabled-enrich-text-1",
+            "title": "Direct enrich-text disabled on render",
+            "link": "https://example.com/articles/render-disabled-enrich-text-1",
+            "ticker": ["AAPL"],
+            "source": "Reuters",
+            "article_text": "Revenue growth stayed ahead of expectations.",
+        },
+    )
+
+    assert enrich_response.status_code == 503
+    assert "Direct enrichment APIs are disabled" in enrich_response.json()["detail"]
+    assert enrich_text_response.status_code == 503
+    assert "Direct enrichment APIs are disabled" in enrich_text_response.json()["detail"]
+
+
+def test_process_next_endpoint_is_disabled_on_render_web(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ingestion_route_module,
+        "settings",
+        replace(ingestion_route_module.settings, enable_job_process_api=False),
+    )
+
+    client = TestClient(app)
+    response = client.post("/api/v1/jobs/process-next")
+
+    assert response.status_code == 503
+    assert "Job processing API is disabled" in response.json()["detail"]

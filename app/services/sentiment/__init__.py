@@ -5,7 +5,20 @@ from app.services.sentiment.chunking import (
     build_chunk_sentiment_result,
     chunk_article_text,
 )
-from app.services.sentiment.finbert import analyze_sentiment, predict_text_probabilities
+
+
+def analyze_sentiment(*args, **kwargs):
+    from app.services.sentiment.finbert import analyze_sentiment as _analyze_sentiment
+
+    return _analyze_sentiment(*args, **kwargs)
+
+
+def predict_text_probabilities(*args, **kwargs):
+    from app.services.sentiment.finbert import (
+        predict_text_probabilities as _predict_text_probabilities,
+    )
+
+    return _predict_text_probabilities(*args, **kwargs)
 
 __all__ = [
     "aggregate_chunk_results",

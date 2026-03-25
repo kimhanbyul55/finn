@@ -2,6 +2,7 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException
 
+from app.core import get_settings
 from app.schemas.ingestion import (
     DirectTextIngestionRequest,
     IngestionAcceptedResponse,
@@ -16,6 +17,7 @@ from app.services.ingestion_service import IngestionService
 
 router = APIRouter(tags=["ingestion"])
 service = IngestionService()
+settings = get_settings()
 
 
 @router.post(
@@ -79,4 +81,12 @@ async def get_news_result(news_id: str) -> NewsResultResponse:
     summary="Process the next queued enrichment job",
 )
 async def process_next_job() -> WorkerProcessResponse:
+    if not settings.enable_job_process_api:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Job processing API is disabled on this web service instance. "
+                "Run the dedicated worker service instead."
+            ),
+        )
     return await asyncio.to_thread(service.process_next_job)
