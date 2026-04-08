@@ -25,6 +25,7 @@ from app.schemas.storage import AnalysisOutcome, AnalysisStatus, EnrichmentStora
 from app.schemas.xai import XAIContributionDirection, XAIResult
 from app.services.orchestrator import EnrichmentOrchestrator
 from app.services.response_state import map_analysis_status_to_error_code
+from app.services.translation import build_localized_content
 
 settings = get_settings()
 
@@ -101,17 +102,27 @@ def build_api_enrichment_response(
 ) -> ArticleEnrichmentResponse:
     mixed_result = payload.article_mixed
     api_sentiment = _build_sentiment_payload(payload, mixed_result)
+    summary_lines = [
+        SummaryLine(line_number=index, text=text)
+        for index, text in enumerate(payload.summary_3lines, start=1)
+    ]
+    xai_payload = _build_xai_payload(payload.xai, api_sentiment)
+    localized = build_localized_content(
+        title=payload.title,
+        summary_3lines=summary_lines,
+        xai=xai_payload,
+        sentiment_label=api_sentiment.label if api_sentiment is not None else None,
+        tickers=getattr(payload, "ticker", None),
+    )
 
     return ArticleEnrichmentResponse(
         news_id=payload.news_id,
         title=payload.title,
         link=payload.link,
-        summary_3lines=[
-            SummaryLine(line_number=index, text=text)
-            for index, text in enumerate(payload.summary_3lines, start=1)
-        ],
+        summary_3lines=summary_lines,
         sentiment=api_sentiment,
-        xai=_build_xai_payload(payload.xai, api_sentiment),
+        xai=xai_payload,
+        localized=localized,
         mixed_flags=_build_mixed_flags(mixed_result),
         status=_map_overall_status(payload.analysis_status, payload.analysis_outcome),
         outcome=payload.analysis_outcome.value,

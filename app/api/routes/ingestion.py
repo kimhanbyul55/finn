@@ -54,24 +54,24 @@ async def get_operational_stats() -> OperationalStatsResponse:
 
 
 @router.get(
-    "/news/{news_id}",
-    response_model=NewsProcessingStatusResponse,
-    summary="Get raw news, latest job, and enrichment result",
+    "/news/{news_id:path}/result",
+    response_model=NewsResultResponse,
+    summary="Get backend-friendly enrichment result for a news item",
 )
-async def get_news_status(news_id: str) -> NewsProcessingStatusResponse:
-    result = await service.get_news_status(news_id)
+async def get_news_result(news_id: str) -> NewsResultResponse:
+    result = await service.get_news_result(news_id)
     if result is None:
         raise HTTPException(status_code=404, detail="News item not found.")
     return result
 
 
 @router.get(
-    "/news/{news_id}/result",
-    response_model=NewsResultResponse,
-    summary="Get backend-friendly enrichment result for a news item",
+    "/news/{news_id:path}",
+    response_model=NewsProcessingStatusResponse,
+    summary="Get raw news, latest job, and enrichment result",
 )
-async def get_news_result(news_id: str) -> NewsResultResponse:
-    result = await service.get_news_result(news_id)
+async def get_news_status(news_id: str) -> NewsProcessingStatusResponse:
+    result = await service.get_news_status(news_id)
     if result is None:
         raise HTTPException(status_code=404, detail="News item not found.")
     return result

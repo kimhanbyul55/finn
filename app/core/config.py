@@ -22,10 +22,15 @@ class AppSettings:
     enable_job_process_api: bool
     use_worker_backed_direct_enrichment: bool
     enable_inline_xai: bool
+    xai_backend: str
     direct_enrichment_wait_timeout_seconds: float
     direct_enrichment_poll_interval_seconds: float
     basic_auth_user: str | None
     basic_auth_password: str | None
+    deepl_api_key: str | None
+    deepl_api_base_url: str
+    deepl_target_lang: str
+    deepl_timeout_seconds: float
 
     @property
     def basic_auth_enabled(self) -> bool:
@@ -58,6 +63,7 @@ def get_settings() -> AppSettings:
             "GENAI_ENABLE_INLINE_XAI",
             default=False,
         ),
+        xai_backend=(os.getenv("GENAI_XAI_BACKEND") or "attention").strip().lower(),
         direct_enrichment_wait_timeout_seconds=float(
             os.getenv("GENAI_DIRECT_ENRICHMENT_WAIT_TIMEOUT", "30")
         ),
@@ -66,4 +72,10 @@ def get_settings() -> AppSettings:
         ),
         basic_auth_user=os.getenv("BASIC_AUTH_USER"),
         basic_auth_password=os.getenv("BASIC_AUTH_PASSWORD"),
+        deepl_api_key=os.getenv("DEEPL_API_KEY"),
+        deepl_api_base_url=(
+            os.getenv("DEEPL_API_BASE_URL") or "https://api-free.deepl.com"
+        ).rstrip("/"),
+        deepl_target_lang=(os.getenv("DEEPL_TARGET_LANG") or "KO").strip().upper(),
+        deepl_timeout_seconds=float(os.getenv("DEEPL_TIMEOUT_SECONDS", "8")),
     )

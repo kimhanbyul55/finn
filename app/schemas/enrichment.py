@@ -256,6 +256,28 @@ class XAIPayload(SchemaModel):
     )
 
 
+class LocalizedArticleContent(SchemaModel):
+    language: str = Field(..., min_length=2, description="Localized display language.")
+    title: str = Field(..., min_length=1, description="Localized article title.")
+    summary_3lines: list[SummaryLine] = Field(
+        default_factory=list,
+        max_length=3,
+        description="Localized summary lines for display.",
+    )
+    xai: XAIPayload | None = Field(
+        default=None,
+        description="Localized XAI payload for display.",
+    )
+    sentiment_label: str | None = Field(
+        default=None,
+        description="Localized display label for the sentiment result.",
+    )
+    ticker_box_labels: dict[str, str] = Field(
+        default_factory=dict,
+        description="Localized display labels for ticker-box style financial metrics.",
+    )
+
+
 class MixedConflictPayload(SchemaModel):
     is_mixed: bool = Field(..., description="Whether the article has mixed sentiment.")
     has_conflicting_signals: bool = Field(
@@ -310,6 +332,10 @@ class ArticleEnrichmentResponse(SchemaModel):
     xai: XAIPayload | None = Field(
         default=None,
         description="Explainability payload when analysis succeeded.",
+    )
+    localized: LocalizedArticleContent | None = Field(
+        default=None,
+        description="Localized display payload for UI consumers.",
     )
     mixed_flags: MixedConflictPayload | None = Field(
         default=None,

@@ -10,6 +10,7 @@ from app.schemas.article_fetch import ArticleFetchResult, ArticleFetchStatus
 from app.schemas.article_fetch import ArticleTextSource
 from app.schemas.enrichment import ArticleEnrichmentRequest
 from app.schemas.mixed import TickerSentimentObservation
+from app.schemas.sentiment import SentimentResult
 from app.schemas.storage import (
     AnalysisStatus,
     EnrichmentStoragePayload,
@@ -25,7 +26,7 @@ from app.services.payload_builder import build_enrichment_storage_payload
 from app.services.sentiment import analyze_sentiment
 from app.services.summarizer import summarize_to_three_lines
 from app.services.text_cleaner import clean_article_text, validate_article_text
-from app.services.xai import explain_sentiment
+from app.services.xai import explain_sentiment, is_xai_backend_disabled
 
 
 logger = get_logger(__name__)
@@ -118,6 +119,7 @@ class EnrichmentOrchestrator:
                         xai_result = self._run_xai_stage(
                             request=request,
                             cleaned_text=cleaned_text,
+                            sentiment_result=sentiment_result,
                             tracker=tracker,
                         )
                     else:
@@ -455,13 +457,21 @@ class EnrichmentOrchestrator:
         *,
         request: ArticleEnrichmentRequest,
         cleaned_text: str,
+        sentiment_result: SentimentResult,
         tracker: PipelineStatusTracker,
     ):
         tracker.start(PipelineStageName.XAI)
+        if is_xai_backend_disabled():
+            tracker.skip(
+                PipelineStageName.XAI,
+                "Skipped because the configured XAI backend is disabled.",
+            )
+            return None
         try:
             xai_result = explain_sentiment(
                 title=request.title,
                 article_text=cleaned_text,
+                sentiment_result=sentiment_result,
             )
         except Exception as exc:
             log_event(

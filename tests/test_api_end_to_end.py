@@ -171,6 +171,7 @@ def test_news_intake_worker_and_status_flow(monkeypatch) -> None:
     assert worker_payload["analysis_status"] == "completed"
     assert worker_payload["analysis_outcome"] == "success"
     assert worker_payload["job"]["status"] == "completed"
+    assert worker_payload["enrichment"]["xai"]["explanation_method"] == "attention_sentence"
 
     status_response = client.get("/api/v1/news/e2e-news-1")
     result_response = client.get("/api/v1/news/e2e-news-1/result")
@@ -201,6 +202,8 @@ def test_news_intake_worker_and_status_flow(monkeypatch) -> None:
     assert result_payload["result"]["status"] == "completed"
     assert result_payload["result"]["outcome"] == "success"
     assert result_payload["result"]["sentiment"]["label"] == "bullish"
+    assert result_payload["result"]["localized"]["title"] == "Company beats earnings estimates"
+    assert result_payload["result"]["localized"]["sentiment_label"] == "강세"
     assert result_payload["result"]["xai"]["highlights"][0]["excerpt"] == (
         "Revenue growth stayed ahead of expectations."
     )
@@ -321,6 +324,7 @@ def test_news_intake_text_worker_and_status_flow(monkeypatch) -> None:
         worker_payload["enrichment"]["fetch_result"]["extraction_source"]
         == "provided_summary_text"
     )
+    assert worker_payload["enrichment"]["xai"]["explanation_method"] == "attention_sentence"
 
     status_response = client.get("/api/v1/news/e2e-news-text-1")
     assert status_response.status_code == 200
@@ -548,3 +552,47 @@ def test_process_next_endpoint_is_disabled_on_render_web(monkeypatch) -> None:
 
     assert response.status_code == 503
     assert "Job processing API is disabled" in response.json()["detail"]
+
+
+def test_news_routes_accept_url_shaped_news_id(monkeypatch) -> None:
+    repository = InMemoryEnrichmentRepository()
+    service = IngestionService(repository=repository)
+    job_service = JobProcessingService(repository=repository)
+    url_shaped_news_id = "https://www.reuters.com/world/us/test-article"
+
+    def _run_and_persist(raw_news: ArticleEnrichmentRequest) -> EnrichmentStoragePayload:
+        payload = _build_completed_payload(raw_news)
+        repository.save_enrichment_result(
+            SaveEnrichmentRequest(raw_news=raw_news, enrichment=payload)
+        )
+        return payload
+
+    monkeypatch.setattr(ingestion_route_module, "service", service)
+    monkeypatch.setattr(ingestion_route_module, "job_service", job_service)
+    monkeypatch.setattr(job_service.orchestrator, "run", _run_and_persist)
+
+    client = TestClient(app)
+
+    intake_response = client.post(
+        "/api/v1/news/intake",
+        json={
+            "news_id": url_shaped_news_id,
+            "title": "URL-shaped news id",
+            "link": "https://example.com/articles/url-shaped-news-id",
+            "ticker": ["AAPL"],
+            "source": "Reuters",
+        },
+    )
+
+    assert intake_response.status_code == 200
+    worker_response = client.post("/api/v1/jobs/process-next")
+    assert worker_response.status_code == 200
+
+    encoded_news_id = "https:%2F%2Fwww.reuters.com%2Fworld%2Fus%2Ftest-article"
+    status_response = client.get(f"/api/v1/news/{encoded_news_id}")
+    result_response = client.get(f"/api/v1/news/{encoded_news_id}/result")
+
+    assert status_response.status_code == 200
+    assert status_response.json()["news_id"] == url_shaped_news_id
+    assert result_response.status_code == 200
+    assert result_response.json()["news_id"] == url_shaped_news_id

@@ -150,7 +150,7 @@ python3 scripts/smoke_test_enrichment.py \
 
 상세 점검 문서:
 
-- [`docs/smoke_test_checklist.md`](/Users/sta/Documents/개발1/docs/smoke_test_checklist.md)
+- `docs/smoke_test_checklist.md`
 
 ## 도메인 매트릭스
 
@@ -218,6 +218,12 @@ python3 scripts/run_smoke_suite.py \
   - 직접 분석 API를 worker-backed 방식으로 처리할지 여부
 - `GENAI_DIRECT_ENRICHMENT_WAIT_TIMEOUT`
   - 직접 분석 요청 대기 timeout
+- `DEEPL_API_KEY`
+  - 설정 시 제목, 3줄 요약, XAI 하이라이트의 UI용 한글 번역을 활성화
+- `DEEPL_API_BASE_URL`
+  - DeepL Free는 `https://api-free.deepl.com`
+- `DEEPL_TARGET_LANG`
+  - 기본값 `KO`
 - `GENAI_DIRECT_ENRICHMENT_POLL_INTERVAL`
   - 직접 분석 요청 대기 polling 간격
 - `BASIC_AUTH_USER`

@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-genai_service}
       POSTGRES_USER: ${POSTGRES_USER:-genai_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-genai_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-db_password_placeholder}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:

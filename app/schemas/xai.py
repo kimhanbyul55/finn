@@ -50,7 +50,7 @@ class XAIHighlight(SchemaModel):
     text_snippet: str = Field(..., min_length=1, description="Sentence used in the explanation.")
     weight: float = Field(
         ...,
-        description="Signed LIME contribution weight for the explained label.",
+        description="Relative model salience score for the explained sentence highlight.",
     )
     importance_score: float = Field(
         ...,
@@ -91,7 +91,7 @@ class XAIResult(SchemaModel):
         description="Sentiment label being explained.",
     )
     explanation_method: str = Field(
-        default="lime_sentence",
+        default="attention_sentence",
         description="Backend explanation method identifier.",
     )
     explained_unit: XAIUnit = Field(
