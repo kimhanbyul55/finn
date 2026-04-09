@@ -202,6 +202,29 @@ python3 scripts/run_smoke_suite.py \
 - `results/suite_summary.json`
 - `results/suite_summary.md`
 
+## Supabase 보안 잠금
+
+Supabase Table Editor에서 `raw_news`, `raw_news_tickers`, `enrichment_jobs`,
+`enrichment_results` 테이블이 `UNRESTRICTED` 로 보인다면, 테이블이 불필요한 것이
+아니라 RLS/권한 정책이 느슨한 상태일 가능성이 큽니다.
+
+이 테이블들은 현재 GenAI 파이프라인의 운영 테이블이므로 삭제하지 말고,
+클라이언트 직접 접근만 차단하는 방향으로 잠그는 것을 권장합니다.
+
+Supabase SQL Editor에서 아래 스크립트를 실행하면 됩니다.
+
+```bash
+scripts/supabase_lockdown_genai_tables.sql
+```
+
+이 스크립트는:
+
+- `anon`, `authenticated` 역할의 직접 접근 권한을 제거하고
+- GenAI 운영 테이블에 RLS를 활성화합니다
+
+즉 FE/공개 클라이언트가 DB를 직접 읽지 못하게 하고, 서버/API를 통해서만
+데이터를 노출하는 방향으로 정리하는 데 목적이 있습니다.
+
 ## 주요 환경변수
 
 - `GENAI_DATABASE_BACKEND`
