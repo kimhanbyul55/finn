@@ -16,8 +16,10 @@ MIN_SENTENCE_CHARACTERS = 24
 MIN_CLAUSE_CHARACTERS = 20
 
 _SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+|\n+")
+_GENERATED_LINE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+")
 _CLAUSE_SPLIT_PATTERN = re.compile(r";|:| -- | - |, (?=(?:but|while|as|after|before|despite)\b)", re.IGNORECASE)
 _TOKEN_PATTERN = re.compile(r"[A-Za-z]{2,}|\d+(?:\.\d+)?%?")
+_NUMERIC_TOKEN_PATTERN = re.compile(r"\$?\d[\d,]*(?:\.\d+)?%?")
 _MULTI_SPACE_PATTERN = re.compile(r"\s+")
 _GENERIC_PREFIX_PATTERN = re.compile(
     r"^(?:the article|the report|this article|in the article)\s+(?:says|reports|notes|highlights)\s+that\s+",
@@ -136,8 +138,13 @@ def _summarize_with_groq(*, title: str, article_text: str) -> list[str] | None:
                 "You are a financial news summarizer. "
                 "Write exactly three Korean summary lines. "
                 "Each line must be a single sentence. "
+                "Keep each line short, self-contained, and usually under 90 Korean characters. "
                 "Preserve numbers, percentages, and ticker symbols exactly. "
+                "Never invent or alter any number, percentage, ticker, or factual detail. "
+                "If a detail is not explicitly stated in the article, omit it. "
                 "Do not exaggerate. "
+                "Do not repeat the title. "
+                "Do not use ellipses. "
                 "Ignore table headers, reconciliation labels, boilerplate, and footers. "
                 "Return only the three lines with no title, bullets, or commentary."
             ),
@@ -158,6 +165,11 @@ def _summarize_with_groq(*, title: str, article_text: str) -> list[str] | None:
             "Groq summary generation returned unusable output; falling back to heuristic summarizer."
         )
         return None
+    if not _summary_preserves_numeric_facts(lines, title=title, article_text=article_text):
+        logger.warning(
+            "Groq summary generation introduced unsupported numeric facts; falling back to heuristic summarizer."
+        )
+        return None
     return lines
 
 
@@ -168,11 +180,41 @@ def _parse_summary_lines(content: str) -> list[str]:
         if not line:
             continue
         line = re.sub(r"^(?:[-*•]\s*|\d+[.)]\s*)", "", line).strip()
-        if line:
-            lines.append(_truncate_for_card(line))
+        if not line:
+            continue
+
+        line_fragments = _split_generated_line(line)
+        for fragment in line_fragments:
+            normalized = _normalize_generated_line(fragment)
+            if normalized:
+                lines.append(normalized)
+            if len(lines) == SUMMARY_LINE_COUNT:
+                break
         if len(lines) == SUMMARY_LINE_COUNT:
             break
     return lines
+
+
+def _split_generated_line(line: str) -> list[str]:
+    fragments = [fragment.strip() for fragment in _GENERATED_LINE_SPLIT_PATTERN.split(line)]
+    return [fragment for fragment in fragments if fragment]
+
+
+def _normalize_generated_line(line: str) -> str:
+    return _normalize_text(line).removesuffix("...").strip()
+
+
+def _summary_preserves_numeric_facts(lines: list[str], *, title: str, article_text: str) -> bool:
+    source_numeric_tokens = _extract_numeric_tokens(f"{title} {article_text}")
+    if not source_numeric_tokens:
+        return True
+
+    summary_numeric_tokens = _extract_numeric_tokens(" ".join(lines))
+    return summary_numeric_tokens.issubset(source_numeric_tokens)
+
+
+def _extract_numeric_tokens(text: str) -> set[str]:
+    return {match.group(0) for match in _NUMERIC_TOKEN_PATTERN.finditer(text)}
 
 
 def _extract_sentences(text: str) -> list[str]:
