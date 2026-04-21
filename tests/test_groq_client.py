@@ -41,6 +41,7 @@ def test_extract_retry_after_seconds_from_rate_limit_message() -> None:
 def test_groq_chat_completion_retries_once_after_429(monkeypatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
     monkeypatch.setenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
+    monkeypatch.setenv("GROQ_RETRY_AFTER_MAX_SECONDS", "2")
 
     calls = {"count": 0}
     sleep_calls: list[float] = []
@@ -93,6 +94,55 @@ def test_groq_chat_completion_retries_once_after_429(monkeypatch) -> None:
     assert result == "ok"
     assert calls["count"] == 2
     assert sleep_calls == [1.25]
+
+
+def test_groq_chat_completion_does_not_sleep_on_daily_token_limit(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
+    monkeypatch.setenv("GROQ_RETRY_AFTER_MAX_SECONDS", "120")
+
+    calls = {"count": 0}
+    sleep_calls: list[float] = []
+
+    class _Response:
+        status_code = 429
+        headers = {}
+
+        def raise_for_status(self) -> None:
+            raise requests.HTTPError("daily limit", response=self)
+
+        def json(self) -> dict[str, object]:
+            return {
+                "error": {
+                    "message": (
+                        "Rate limit reached for model llama-3.1-8b-instant on "
+                        "tokens per day (TPD): Limit 500000, Used 500000, Requested 302. "
+                        "Please try again in 52.18s."
+                    )
+                }
+            }
+
+    def _fake_post(*args, **kwargs):
+        calls["count"] += 1
+        return _Response()
+
+    monkeypatch.setattr("app.services.groq.client.requests.post", _fake_post)
+    monkeypatch.setattr("app.services.groq.client.time.sleep", lambda seconds: sleep_calls.append(seconds))
+
+    try:
+        groq_chat_completion(
+            model="llama-3.1-8b-instant",
+            system_prompt="system",
+            user_prompt="user",
+            request_label="test_daily_limit",
+        )
+    except requests.HTTPError:
+        pass
+    else:
+        raise AssertionError("Expected daily token limit to fail fast.")
+
+    assert calls["count"] == 1
+    assert sleep_calls == []
 
 
 def test_groq_logs_include_news_context_and_token_usage(monkeypatch, caplog) -> None:

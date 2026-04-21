@@ -70,6 +70,7 @@ def build_localized_content(
     sentiment_label: SentimentLabel | None,
     tickers: list[str] | None = None,
     xai_highlight_limit: int | None = None,
+    allow_groq: bool = True,
 ) -> LocalizedArticleContent:
     limited_xai = _limit_xai_payload(xai, highlight_limit=xai_highlight_limit)
     translations = _translate_localized_payload(
@@ -77,6 +78,7 @@ def build_localized_content(
         summary_3lines=summary_3lines,
         xai=limited_xai,
         tickers=tickers,
+        allow_groq=allow_groq,
     )
     translated_title = translations["title"]
     translated_summary = [
@@ -139,10 +141,11 @@ def _translate_localized_payload(
     summary_3lines: list[SummaryLine],
     xai: XAIPayload | None,
     tickers: list[str] | None,
- ) -> dict[str, str]:
+    allow_groq: bool,
+) -> dict[str, str]:
     tasks = _build_translation_tasks(title=title, summary_3lines=summary_3lines, xai=xai)
     original_values = {task.key: task.text.strip() for task in tasks}
-    if not groq_is_enabled():
+    if not allow_groq or not groq_is_enabled():
         return original_values
 
     try:

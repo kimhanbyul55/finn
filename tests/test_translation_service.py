@@ -114,6 +114,35 @@ def test_build_localized_content_uses_groq_when_api_key_present(monkeypatch) -> 
     assert localized.xai.highlights[0].excerpt == "가이던스가 상향되었습니다."
 
 
+def test_build_localized_content_can_disable_groq_for_response_fallback(monkeypatch) -> None:
+    _cached_translation_completion.cache_clear()
+    _cached_translation_batch_completion.cache_clear()
+    _cached_translation_repair_completion.cache_clear()
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+
+    def _fail_post(*args, **kwargs):
+        raise AssertionError("response fallback should not spend Groq tokens")
+
+    monkeypatch.setattr("app.services.groq.client.requests.post", _fail_post)
+
+    localized = build_localized_content(
+        title="Apple raises guidance",
+        summary_3lines=[
+            SummaryLine(line_number=1, text="Revenue grew 12%."),
+            SummaryLine(line_number=2, text="Margins improved."),
+            SummaryLine(line_number=3, text="Guidance was raised."),
+        ],
+        xai=None,
+        sentiment_label=SentimentLabel.BULLISH,
+        tickers=["AAPL"],
+        allow_groq=False,
+    )
+
+    assert localized.title == "Apple raises guidance"
+    assert localized.summary_3lines[0].text == "Revenue grew 12%."
+    assert localized.sentiment_label == "강세"
+
+
 def test_build_localized_content_reuses_cached_groq_translations(monkeypatch) -> None:
     _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()

@@ -146,6 +146,7 @@ def build_api_enrichment_response(
             sentiment_label=api_sentiment.label if api_sentiment is not None else None,
             tickers=getattr(payload, "ticker", None),
             xai_highlight_limit=settings.localized_xai_highlight_limit,
+            allow_groq=False,
         )
 
     return ArticleEnrichmentResponse(

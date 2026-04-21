@@ -106,7 +106,14 @@ def groq_chat_completion(
                 error_message=error_message,
                 attempt=attempt + 1,
             )
-            if response.status_code == 429 and retry_after_seconds and attempt + 1 < max_attempts:
+            can_retry_rate_limit = (
+                response.status_code == 429
+                and retry_after_seconds is not None
+                and retry_after_seconds <= settings.groq_retry_after_max_seconds
+                and not _is_daily_token_limit_error(error_message)
+                and attempt + 1 < max_attempts
+            )
+            if can_retry_rate_limit:
                 time.sleep(retry_after_seconds)
                 attempt += 1
                 continue
@@ -163,6 +170,13 @@ def _extract_retry_after_seconds(response: requests.Response) -> float | None:
             if match:
                 return float(match.group(1))
     return None
+
+
+def _is_daily_token_limit_error(error_message: str | None) -> bool:
+    if not error_message:
+        return False
+    normalized = error_message.lower()
+    return "tokens per day" in normalized or "tpd" in normalized
 
 
 def _safe_json(response: requests.Response) -> dict[str, object] | None:

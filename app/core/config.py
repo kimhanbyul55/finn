@@ -37,6 +37,7 @@ class AppSettings:
     groq_summary_model: str
     groq_translation_model: str
     groq_timeout_seconds: float
+    groq_retry_after_max_seconds: float
     groq_summary_soft_char_limit: int
     groq_summary_hard_char_limit: int
     groq_translation_char_limit: int
@@ -103,6 +104,7 @@ def get_settings() -> AppSettings:
             os.getenv("GROQ_TRANSLATION_MODEL") or "llama-3.1-8b-instant"
         ).strip(),
         groq_timeout_seconds=float(os.getenv("GROQ_TIMEOUT_SECONDS", "20")),
+        groq_retry_after_max_seconds=float(os.getenv("GROQ_RETRY_AFTER_MAX_SECONDS", "0")),
         groq_summary_soft_char_limit=int(os.getenv("GROQ_SUMMARY_SOFT_CHAR_LIMIT", "3500")),
         groq_summary_hard_char_limit=int(os.getenv("GROQ_SUMMARY_HARD_CHAR_LIMIT", "6500")),
         groq_translation_char_limit=int(os.getenv("GROQ_TRANSLATION_CHAR_LIMIT", "1200")),
