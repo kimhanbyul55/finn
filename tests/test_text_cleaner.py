@@ -60,6 +60,33 @@ def test_clean_article_text_keeps_narrative_earnings_lines_with_gaap_terms() -> 
     assert "CONDENSED CONSOLIDATED" not in cleaned
 
 
+def test_clean_article_text_keeps_sentence_with_table_caption_terms() -> None:
+    raw_text = (
+        "The company said revenue, reported in millions, increased year over year as demand "
+        "improved and management pointed to stronger bookings in the current quarter.\n"
+        "In millions\n"
+        "Net sales\n"
+    )
+
+    cleaned = clean_article_text(raw_text)
+
+    assert "reported in millions, increased year over year" in cleaned
+    assert "In millions" not in cleaned
+
+
+def test_clean_article_text_keeps_sentence_describing_gaap_reconciliation() -> None:
+    raw_text = (
+        "Management said GAAP and non-GAAP results both improved in the quarter, while the "
+        "company noted that cost controls helped offset softer demand in one segment.\n"
+        "RECONCILIATION OF GAAP TO NON-GAAP FINANCIAL MEASURES\n"
+    )
+
+    cleaned = clean_article_text(raw_text)
+
+    assert "GAAP and non-GAAP results both improved" in cleaned
+    assert "RECONCILIATION OF GAAP TO NON-GAAP" not in cleaned
+
+
 def test_validate_article_text_requires_richer_article_bodies_by_default() -> None:
     validation = validate_article_text("Revenue rose and outlook improved.")
 

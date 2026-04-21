@@ -11,6 +11,7 @@ from app.schemas.ingestion import (
     RawNewsIngestionRequest,
 )
 from app.schemas.operations import OperationalStatsResponse
+from app.schemas.storage import AnalysisOutcome, AnalysisStatus
 from app.services.enrichment_service import build_api_enrichment_response
 from app.services.response_state import derive_error_code, derive_processing_state, map_job_status_to_processing_state
 
@@ -46,6 +47,26 @@ class IngestionService:
         self,
         payload: RawNewsIngestionRequest,
     ) -> IngestionAcceptedResponse:
+        existing = await asyncio.to_thread(self.repository.get_enrichment_result, payload.news_id)
+        if (
+            existing is not None
+            and existing.analysis_status == AnalysisStatus.COMPLETED
+            and existing.analysis_outcome == AnalysisOutcome.SUCCESS
+            and _normalize_link(existing.link) == _normalize_link(payload.link)
+        ):
+            latest_job = await asyncio.to_thread(self.repository.get_latest_job, payload.news_id)
+            return IngestionAcceptedResponse(
+                news_id=payload.news_id,
+                queued=False,
+                processing_state=derive_processing_state(
+                    latest_job=latest_job,
+                    enrichment=existing,
+                ),
+                error_code=derive_error_code(latest_job=latest_job, enrichment=existing),
+                message="Existing completed enrichment result reused; no new job queued.",
+                job=latest_job,
+            )
+
         await asyncio.to_thread(self.repository.upsert_raw_news, payload)
 
         active_job = await asyncio.to_thread(self.repository.get_active_job, payload.news_id)
@@ -113,3 +134,7 @@ class IngestionService:
 
     async def get_operational_stats(self) -> OperationalStatsResponse:
         return await asyncio.to_thread(self.repository.get_operational_stats)
+
+
+def _normalize_link(value: object) -> str:
+    return str(value).strip().rstrip("/")

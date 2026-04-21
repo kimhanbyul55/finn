@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import app.services.orchestrator.pipeline as pipeline_module
 from app.repositories import InMemoryEnrichmentRepository
-from app.schemas.article_fetch import ArticleFetchResult, ArticleFetchStatus
+from app.schemas.article_fetch import (
+    ArticleFetchFailureCategory,
+    ArticleFetchResult,
+    ArticleFetchStatus,
+)
 from app.schemas.enrichment import ArticleEnrichmentRequest
 from app.schemas.mixed import (
     ArticleMixedConfig,
@@ -25,6 +31,43 @@ from app.schemas.sentiment import (
 from app.schemas.storage import AnalysisOutcome, AnalysisStatus
 from app.schemas.xai import XAIResult
 from app.services.orchestrator.pipeline import EnrichmentOrchestrator
+
+
+def test_orchestrator_skips_remote_fetch_for_blocked_domain_without_direct_text(monkeypatch) -> None:
+    monkeypatch.setattr(
+        pipeline_module,
+        "settings",
+        replace(
+            pipeline_module.settings,
+            fetch_blocked_domains=("finance.yahoo.com",),
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "fetch_article_text",
+        lambda link: (_ for _ in ()).throw(
+            AssertionError("Blocked domains should not be fetched remotely.")
+        ),
+    )
+
+    request = ArticleEnrichmentRequest(
+        news_id="blocked-yahoo-news-1",
+        title="Yahoo Finance article",
+        link="https://finance.yahoo.com/news/example-article",
+        ticker=["AAPL"],
+    )
+
+    result = EnrichmentOrchestrator(
+        repository=InMemoryEnrichmentRepository()
+    ).run(request)
+
+    assert result.analysis_status == AnalysisStatus.FETCH_FAILED
+    assert result.analysis_outcome == AnalysisOutcome.FATAL_FAILURE
+    assert result.fetch_result is not None
+    assert result.fetch_result.fetch_status == ArticleFetchStatus.FETCH_FAILED
+    assert result.fetch_result.retryable is False
+    assert result.fetch_result.failure_category == ArticleFetchFailureCategory.ACCESS_BLOCKED
+    assert "Supply article_text" in (result.fetch_result.error_message or "")
 
 
 def test_orchestrator_marks_partial_failure_when_xai_stage_fails(monkeypatch) -> None:

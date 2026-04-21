@@ -153,16 +153,36 @@ def _looks_like_table_header(line: str) -> bool:
             ch.isalpha() for ch in compact_line
         ) >= 25
     if "gaap" in lowered and "non-gaap" in lowered:
-        return True
+        return _looks_like_financial_table_label(compact_line)
     if "condensed consolidated" in lowered:
-        return True
+        return _looks_like_financial_table_label(compact_line)
     if "statements of income" in lowered or "balance sheets" in lowered:
-        return True
+        return _looks_like_financial_table_label(compact_line)
     if "except per share data" in lowered or "in millions" in lowered:
-        return True
+        return _looks_like_financial_table_caption(compact_line)
     if len(line) > 45 and line.upper() == line and sum(ch.isalpha() for ch in line) >= 25:
         return True
     return False
+
+
+def _looks_like_financial_table_label(line: str) -> bool:
+    """Only drop financial phrases when they look like a heading, not article prose."""
+    alpha_tokens = _ALPHA_TOKEN_PATTERN.findall(line)
+    if _SENTENCE_END_PATTERN.search(line) and len(alpha_tokens) >= 8:
+        return False
+    if len(line) <= 120:
+        return True
+    return line.upper() == line
+
+
+def _looks_like_financial_table_caption(line: str) -> bool:
+    """Drop short table units/captions while keeping narrative sentences."""
+    alpha_tokens = _ALPHA_TOKEN_PATTERN.findall(line)
+    if _SENTENCE_END_PATTERN.search(line) and len(alpha_tokens) >= 8:
+        return False
+    if len(line) <= 90 and (line.startswith("(") or line.endswith(")") or "," in line):
+        return True
+    return len(alpha_tokens) <= 6
 
 
 def _looks_like_narrative_line(line: str) -> bool:

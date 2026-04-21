@@ -150,12 +150,27 @@ class FlexibleTextEnrichmentRequest(ArticleEnrichmentRequest):
     article_text: str | None = Field(
         default=None,
         min_length=1,
+        validation_alias=AliasChoices(
+            "article_text",
+            "articleBody",
+            "article_body",
+            "body",
+            "content",
+            "full_text",
+            "raw_text",
+        ),
         description="Licensed full article text supplied directly by the upstream provider.",
     )
     summary_text: str | None = Field(
         default=None,
         min_length=1,
-        validation_alias=AliasChoices("summary_text", "text"),
+        validation_alias=AliasChoices(
+            "summary_text",
+            "summary",
+            "snippet",
+            "description",
+            "text",
+        ),
         description="Licensed summary/snippet text supplied directly by the upstream provider.",
     )
 

@@ -6,7 +6,7 @@ from enum import Enum
 from pydantic import Field, HttpUrl
 
 from app.schemas.article_fetch import ArticleFetchResult
-from app.schemas.enrichment import SchemaModel
+from app.schemas.enrichment import LocalizedArticleContent, SchemaModel
 from app.schemas.mixed import (
     ArticleMixedDetectionResult,
     TickerMixedDetectionResult,
@@ -111,6 +111,10 @@ class EnrichmentStoragePayload(SchemaModel):
     xai: XAIResult | None = Field(
         default=None,
         description="Stored explainability payload.",
+    )
+    localized: LocalizedArticleContent | None = Field(
+        default=None,
+        description="Stored localized display payload to avoid repeated translation calls.",
     )
     article_mixed: ArticleMixedDetectionResult | None = Field(
         default=None,

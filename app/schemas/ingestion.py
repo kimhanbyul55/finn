@@ -66,7 +66,10 @@ class IngestionAcceptedResponse(SchemaModel):
         description="Stable machine-readable error code when the request is already in a failed state.",
     )
     message: str = Field(..., min_length=1)
-    job: EnrichmentJobRecord = Field(..., description="Active or newly created job record.")
+    job: EnrichmentJobRecord | None = Field(
+        default=None,
+        description="Active or newly created job record. Missing when an existing completed result is reused.",
+    )
 
 
 class NewsProcessingStatusResponse(SchemaModel):

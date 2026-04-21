@@ -15,6 +15,8 @@ from app.schemas.enrichment import (
     ArticleEnrichmentRequest,
     DirectTextEnrichmentRequest,
     FlexibleTextEnrichmentRequest,
+    LocalizedArticleContent,
+    SummaryLine,
 )
 from app.schemas.ingestion import EnrichmentJobRecord, EnrichmentJobStatus
 from app.schemas.sentiment import (
@@ -159,6 +161,21 @@ def _build_filtered_payload(request: ArticleEnrichmentRequest) -> EnrichmentStor
     )
 
 
+def _build_localized_payload() -> LocalizedArticleContent:
+    return LocalizedArticleContent(
+        language="ko",
+        title="회사가 실적 예상치를 웃돌았다",
+        summary_3lines=[
+            SummaryLine(line_number=1, text="매출 성장이 예상치를 웃돌았다."),
+            SummaryLine(line_number=2, text="경영진은 안정적인 수요를 강조했다."),
+            SummaryLine(line_number=3, text="투자자들은 가이던스 유지 여부를 주시하고 있다."),
+        ],
+        xai=None,
+        sentiment_label="강세",
+        ticker_box_labels={"revenue": "매출"},
+    )
+
+
 def test_news_intake_worker_and_status_flow(monkeypatch) -> None:
     repository = InMemoryEnrichmentRepository()
     service = IngestionService(repository=repository)
@@ -247,6 +264,157 @@ def test_news_intake_worker_and_status_flow(monkeypatch) -> None:
     assert result_payload["result"]["xai"]["highlights"][0]["excerpt"] == (
         "Revenue growth stayed ahead of expectations."
     )
+
+
+def test_news_result_reuses_stored_localized_payload(monkeypatch) -> None:
+    repository = InMemoryEnrichmentRepository()
+    service = IngestionService(repository=repository)
+    request = ArticleEnrichmentRequest(
+        news_id="localized-cache-news-1",
+        title="Company beats earnings estimates",
+        link="https://example.com/articles/localized-cache-news-1",
+        ticker=["AAPL"],
+        source="Reuters",
+    )
+    payload = _build_completed_payload(request).model_copy(
+        update={"localized": _build_localized_payload()}
+    )
+    repository.save_enrichment_result(
+        SaveEnrichmentRequest(raw_news=request, enrichment=payload)
+    )
+
+    def _fail_translation(*args, **kwargs):
+        raise AssertionError("localized should be reused without translation")
+
+    monkeypatch.setattr(ingestion_route_module, "service", service)
+    monkeypatch.setattr("app.services.enrichment_service.build_localized_content", _fail_translation)
+
+    client = TestClient(app)
+    response = client.get("/api/v1/news/localized-cache-news-1/result")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["result"]["localized"]["title"] == "회사가 실적 예상치를 웃돌았다"
+    assert body["result"]["localized"]["summary_3lines"][0]["text"] == "매출 성장이 예상치를 웃돌았다."
+
+
+def test_news_intake_reuses_existing_completed_result(monkeypatch) -> None:
+    repository = InMemoryEnrichmentRepository()
+    service = IngestionService(repository=repository)
+    request = ArticleEnrichmentRequest(
+        news_id="existing-completed-news-1",
+        title="Company beats earnings estimates",
+        link="https://example.com/articles/existing-completed-news-1",
+        ticker=["AAPL"],
+        source="Reuters",
+    )
+    payload = _build_completed_payload(request).model_copy(
+        update={"localized": _build_localized_payload()}
+    )
+    repository.save_enrichment_result(
+        SaveEnrichmentRequest(raw_news=request, enrichment=payload)
+    )
+
+    monkeypatch.setattr(ingestion_route_module, "service", service)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/news/intake",
+        json={
+            "news_id": "existing-completed-news-1",
+            "title": "Company beats earnings estimates",
+            "link": "https://example.com/articles/existing-completed-news-1",
+            "ticker": ["AAPL"],
+            "source": "Reuters",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["queued"] is False
+    assert body["processing_state"] == "completed"
+    assert body["message"] == "Existing completed enrichment result reused; no new job queued."
+
+
+def test_news_intake_does_not_reuse_completed_result_for_different_link(monkeypatch) -> None:
+    repository = InMemoryEnrichmentRepository()
+    service = IngestionService(repository=repository)
+    request = ArticleEnrichmentRequest(
+        news_id="same-id-different-link-1",
+        title="Company beats earnings estimates",
+        link="https://example.com/articles/original",
+        ticker=["AAPL"],
+        source="Reuters",
+    )
+    payload = _build_completed_payload(request).model_copy(
+        update={"localized": _build_localized_payload()}
+    )
+    repository.save_enrichment_result(
+        SaveEnrichmentRequest(raw_news=request, enrichment=payload)
+    )
+
+    monkeypatch.setattr(ingestion_route_module, "service", service)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/news/intake",
+        json={
+            "news_id": "same-id-different-link-1",
+            "title": "Company beats earnings estimates",
+            "link": "https://example.com/articles/changed",
+            "ticker": ["AAPL"],
+            "source": "Reuters",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["queued"] is True
+    assert body["processing_state"] == "queued"
+
+
+def test_direct_enrich_does_not_reuse_completed_result_for_different_link(monkeypatch) -> None:
+    repository = InMemoryEnrichmentRepository()
+    service = EnrichmentService(repository=repository)
+    original_request = ArticleEnrichmentRequest(
+        news_id="direct-same-id-different-link-1",
+        title="Company beats earnings estimates",
+        link="https://example.com/articles/original",
+        ticker=["AAPL"],
+        source="Reuters",
+    )
+    payload = _build_completed_payload(original_request).model_copy(
+        update={"localized": _build_localized_payload()}
+    )
+    repository.save_enrichment_result(
+        SaveEnrichmentRequest(raw_news=original_request, enrichment=payload)
+    )
+
+    def _run_and_persist(raw_news: ArticleEnrichmentRequest) -> EnrichmentStoragePayload:
+        assert str(raw_news.link).rstrip("/") == "https://example.com/articles/changed"
+        updated_payload = _build_completed_payload(raw_news)
+        repository.save_enrichment_result(
+            SaveEnrichmentRequest(raw_news=raw_news, enrichment=updated_payload)
+        )
+        return updated_payload
+
+    monkeypatch.setattr(enrichment_route_module, "service", service)
+    monkeypatch.setattr(service.orchestrator, "run", _run_and_persist)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/articles/enrich",
+        json={
+            "news_id": "direct-same-id-different-link-1",
+            "title": "Company beats earnings estimates",
+            "link": "https://example.com/articles/changed",
+            "ticker": ["AAPL"],
+            "source": "Reuters",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["link"] == "https://example.com/articles/changed"
 
 
 def test_news_result_exposes_filtered_content_without_error(monkeypatch) -> None:
@@ -491,6 +659,67 @@ def test_news_intake_accepts_text_alias_and_queues_direct_text(monkeypatch) -> N
     assert (
         worker_response.json()["enrichment"]["fetch_result"]["extraction_source"]
         == "provided_summary_text"
+    )
+
+
+def test_news_intake_accepts_article_body_alias_and_skips_remote_fetch(monkeypatch) -> None:
+    repository = InMemoryEnrichmentRepository()
+    service = IngestionService(repository=repository)
+    job_service = JobProcessingService(repository=repository)
+
+    captured_text: dict[str, str | None] = {}
+
+    def _run_with_text_and_persist(
+        raw_news: ArticleEnrichmentRequest,
+        *,
+        article_text: str | None = None,
+        summary_text: str | None = None,
+    ) -> EnrichmentStoragePayload:
+        captured_text["article_text"] = article_text
+        captured_text["summary_text"] = summary_text
+        payload = _build_completed_payload(raw_news)
+        payload.fetch_result.extraction_source = ArticleTextSource.PROVIDED_ARTICLE_TEXT
+        repository.save_enrichment_result(
+            SaveEnrichmentRequest(raw_news=raw_news, enrichment=payload)
+        )
+        return payload
+
+    def _run_should_not_execute(*args, **kwargs):
+        raise AssertionError("Direct article body aliases should not fall back to URL fetch.")
+
+    monkeypatch.setattr(ingestion_route_module, "service", service)
+    monkeypatch.setattr(ingestion_route_module, "job_service", job_service)
+    monkeypatch.setattr(job_service.orchestrator, "run_with_text", _run_with_text_and_persist)
+    monkeypatch.setattr(job_service.orchestrator, "run", _run_should_not_execute)
+
+    client = TestClient(app)
+    intake_response = client.post(
+        "/api/v1/news/intake",
+        json={
+            "news_id": "e2e-news-article-body-alias-1",
+            "title": "Yahoo article with upstream text",
+            "link": "https://finance.yahoo.com/news/example-article",
+            "ticker": ["AAPL"],
+            "source": "Yahoo Finance",
+            "articleBody": (
+                "Revenue growth stayed ahead of expectations. "
+                "Management highlighted stable demand and improved margins. "
+                "Investors are watching whether guidance remains intact."
+            ),
+        },
+    )
+
+    assert intake_response.status_code == 200
+
+    worker_response = client.post("/api/v1/jobs/process-next")
+    assert worker_response.status_code == 200
+    assert worker_response.json()["processing_state"] == "completed"
+    assert captured_text["article_text"] is not None
+    assert "Revenue growth" in captured_text["article_text"]
+    assert captured_text["summary_text"] is None
+    assert (
+        worker_response.json()["enrichment"]["fetch_result"]["extraction_source"]
+        == "provided_article_text"
     )
 
 

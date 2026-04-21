@@ -4,6 +4,7 @@ from app.schemas.enrichment import SummaryLine, XAIHighlightItem, XAIPayload
 from app.schemas.enrichment import SentimentLabel
 from app.services.translation.deepl_service import _cached_translation_completion
 from app.services.translation.deepl_service import _cached_translation_batch_completion
+from app.services.translation.deepl_service import _cached_translation_repair_completion
 from app.services.translation.deepl_service import _polish_korean_financial_text
 from app.services.translation.deepl_service import build_localized_content
 
@@ -11,6 +12,7 @@ from app.services.translation.deepl_service import build_localized_content
 def test_build_localized_content_falls_back_without_api_key(monkeypatch) -> None:
     _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
+    _cached_translation_repair_completion.cache_clear()
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
 
     localized = build_localized_content(
@@ -49,6 +51,7 @@ def test_build_localized_content_falls_back_without_api_key(monkeypatch) -> None
 def test_build_localized_content_uses_groq_when_api_key_present(monkeypatch) -> None:
     _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
+    _cached_translation_repair_completion.cache_clear()
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
     monkeypatch.setenv("GROQ_API_BASE_URL", "https://api.groq.com/openai")
     monkeypatch.setenv("GROQ_TRANSLATION_MODEL", "llama-3.1-8b-instant")
@@ -114,6 +117,7 @@ def test_build_localized_content_uses_groq_when_api_key_present(monkeypatch) -> 
 def test_build_localized_content_reuses_cached_groq_translations(monkeypatch) -> None:
     _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
+    _cached_translation_repair_completion.cache_clear()
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
     monkeypatch.setenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
     monkeypatch.setenv("GROQ_TRANSLATION_MODEL", "llama-3.1-8b-instant")
@@ -163,6 +167,98 @@ def test_build_localized_content_reuses_cached_groq_translations(monkeypatch) ->
     assert first.title == second.title
     assert first.summary_3lines[0].text == second.summary_3lines[0].text
     assert calls["count"] == 1
+
+
+def test_build_localized_content_skips_already_korean_summary_lines(monkeypatch) -> None:
+    _cached_translation_completion.cache_clear()
+    _cached_translation_batch_completion.cache_clear()
+    _cached_translation_repair_completion.cache_clear()
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
+    monkeypatch.setenv("GROQ_TRANSLATION_MODEL", "llama-3.1-8b-instant")
+
+    captured_payloads: list[str] = []
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "title|||애플이 가이던스를 상향했습니다"
+                        }
+                    }
+                ]
+            }
+
+    def _fake_post(*args, **kwargs):
+        captured_payloads.append(kwargs["json"]["messages"][1]["content"])
+        return _Response()
+
+    monkeypatch.setattr("app.services.groq.client.requests.post", _fake_post)
+
+    localized = build_localized_content(
+        title="Apple raises guidance",
+        summary_3lines=[
+            SummaryLine(line_number=1, text="매출은 12% 증가했다."),
+            SummaryLine(line_number=2, text="마진은 개선됐다."),
+            SummaryLine(line_number=3, text="경영진은 가이던스를 상향했다."),
+        ],
+        xai=None,
+        sentiment_label=SentimentLabel.BULLISH,
+        tickers=["AAPL"],
+    )
+
+    assert captured_payloads == ["title|||Apple raises guidance"]
+    assert localized.title == "애플이 가이던스를 상향했습니다"
+    assert localized.summary_3lines[0].text == "매출은 12% 증가했다."
+    assert localized.summary_3lines[2].text == "경영진은 가이던스를 상향했다."
+
+
+def test_build_localized_content_repairs_mixed_language_translation(monkeypatch) -> None:
+    _cached_translation_completion.cache_clear()
+    _cached_translation_batch_completion.cache_clear()
+    _cached_translation_repair_completion.cache_clear()
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
+    monkeypatch.setenv("GROQ_TRANSLATION_MODEL", "llama-3.1-8b-instant")
+
+    calls = {"count": 0}
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            calls["count"] += 1
+            if calls["count"] == 1:
+                content = "title|||VAL खरीदना 지금이 좋은가, 还是等待해야 하는가?"
+            else:
+                content = "title|||VAL을 지금 매수할 만한지 신중히 검토해야 한다"
+            return {"choices": [{"message": {"content": content}}]}
+
+    def _fake_post(*args, **kwargs):
+        return _Response()
+
+    monkeypatch.setattr("app.services.groq.client.requests.post", _fake_post)
+
+    localized = build_localized_content(
+        title="Is it time to buy VAL or wait?",
+        summary_3lines=[
+            SummaryLine(line_number=1, text="매출은 안정적으로 증가했다."),
+            SummaryLine(line_number=2, text="마진은 압박을 받았다."),
+            SummaryLine(line_number=3, text="투자자는 가이던스를 지켜보고 있다."),
+        ],
+        xai=None,
+        sentiment_label=SentimentLabel.NEUTRAL,
+        tickers=["VAL"],
+    )
+
+    assert calls["count"] == 2
+    assert localized.title == "VAL을 지금 매수할 만한지 신중히 검토해야 한다"
 
 
 def test_polish_korean_financial_text_normalizes_literal_finance_phrases() -> None:

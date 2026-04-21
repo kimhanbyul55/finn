@@ -39,6 +39,8 @@ class AppSettings:
     groq_summary_soft_char_limit: int
     groq_summary_hard_char_limit: int
     groq_translation_char_limit: int
+    localized_xai_highlight_limit: int
+    fetch_blocked_domains: tuple[str, ...]
 
     @property
     def basic_auth_enabled(self) -> bool:
@@ -100,4 +102,21 @@ def get_settings() -> AppSettings:
         groq_summary_soft_char_limit=int(os.getenv("GROQ_SUMMARY_SOFT_CHAR_LIMIT", "3500")),
         groq_summary_hard_char_limit=int(os.getenv("GROQ_SUMMARY_HARD_CHAR_LIMIT", "6500")),
         groq_translation_char_limit=int(os.getenv("GROQ_TRANSLATION_CHAR_LIMIT", "1200")),
+        localized_xai_highlight_limit=int(os.getenv("GENAI_LOCALIZED_XAI_HIGHLIGHT_LIMIT", "2")),
+        fetch_blocked_domains=_parse_csv_env(
+            "GENAI_FETCH_BLOCKED_DOMAINS",
+            default=(
+                "finance.yahoo.com",
+                "www.finance.yahoo.com",
+                "news.yahoo.co.jp",
+            ),
+        ),
     )
+
+
+def _parse_csv_env(name: str, *, default: tuple[str, ...]) -> tuple[str, ...]:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    items = tuple(item.strip().lower() for item in value.split(",") if item.strip())
+    return items or default

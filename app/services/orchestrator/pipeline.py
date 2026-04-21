@@ -6,7 +6,11 @@ from datetime import datetime, timezone
 from app.core import get_settings
 from app.core.logging import get_logger, log_event
 from app.repositories import EnrichmentRepository, SaveEnrichmentRequest
-from app.schemas.article_fetch import ArticleFetchResult, ArticleFetchStatus
+from app.schemas.article_fetch import (
+    ArticleFetchFailureCategory,
+    ArticleFetchResult,
+    ArticleFetchStatus,
+)
 from app.schemas.article_fetch import ArticleTextSource
 from app.schemas.enrichment import ArticleEnrichmentRequest
 from app.schemas.mixed import TickerSentimentObservation
@@ -31,6 +35,22 @@ from app.services.xai import explain_sentiment, is_xai_backend_disabled
 
 logger = get_logger(__name__)
 settings = get_settings()
+
+
+def _is_remote_fetch_blocked(host: str) -> bool:
+    normalized_host = host.strip().lower().rstrip(".")
+    if not normalized_host:
+        return False
+
+    for blocked_domain in settings.fetch_blocked_domains:
+        normalized_blocked = blocked_domain.strip().lower().lstrip(".").rstrip(".")
+        if not normalized_blocked:
+            continue
+        if normalized_host == normalized_blocked:
+            return True
+        if normalized_host.endswith(f".{normalized_blocked}"):
+            return True
+    return False
 
 
 class EnrichmentOrchestrator:
@@ -213,6 +233,36 @@ class EnrichmentOrchestrator:
                 retryable=False,
                 failure_category=None,
                 error_message=None,
+            )
+        if _is_remote_fetch_blocked(str(request.link.host or "")):
+            message = (
+                "Remote article fetch is disabled for this publisher domain. "
+                "Supply article_text in the payload to enrich this article without crawling."
+            )
+            log_event(
+                logger,
+                logging.WARNING,
+                "article_fetch_skipped_blocked_domain",
+                news_id=request.news_id,
+                link=str(request.link),
+                publisher_domain=request.link.host,
+                blocked_domains=settings.fetch_blocked_domains,
+            )
+            tracker.fail(
+                PipelineStageName.FETCH,
+                message,
+                fatal=True,
+            )
+            return ArticleFetchResult(
+                link=str(request.link),
+                publisher_domain=request.link.host or "",
+                final_url=str(request.link),
+                raw_text="",
+                cleaned_text="",
+                fetch_status=ArticleFetchStatus.FETCH_FAILED,
+                retryable=False,
+                failure_category=ArticleFetchFailureCategory.ACCESS_BLOCKED,
+                error_message=message,
             )
         try:
             fetch_result = fetch_article_text(str(request.link))
@@ -605,6 +655,7 @@ class EnrichmentOrchestrator:
                 xai_result=xai_result,
                 article_mixed=article_mixed,
                 ticker_mixed=ticker_mixed,
+                tickers=request.ticker,
                 analyzed_at=analyzed_at,
                 errors=tracker.errors(),
             )

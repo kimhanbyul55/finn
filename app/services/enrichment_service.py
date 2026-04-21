@@ -69,6 +69,10 @@ class EnrichmentService:
         self,
         payload: FlexibleTextEnrichmentRequest,
     ) -> ArticleEnrichmentResponse:
+        existing = await self._get_reusable_completed_result(payload)
+        if existing is not None:
+            return build_api_enrichment_response(existing)
+
         if settings.use_worker_backed_direct_enrichment:
             storage_payload = await self.direct_enrichment_job_service.submit_and_wait(payload)
             return build_api_enrichment_response(storage_payload)
@@ -87,6 +91,10 @@ class EnrichmentService:
         self,
         payload: DirectTextEnrichmentRequest,
     ) -> ArticleEnrichmentResponse:
+        existing = await self._get_reusable_completed_result(payload)
+        if existing is not None:
+            return build_api_enrichment_response(existing)
+
         if settings.use_worker_backed_direct_enrichment:
             storage_payload = await self.direct_enrichment_job_service.submit_and_wait(payload)
             return build_api_enrichment_response(storage_payload)
@@ -97,6 +105,21 @@ class EnrichmentService:
             summary_text=payload.summary_text,
         )
         return build_api_enrichment_response(storage_payload)
+
+    async def _get_reusable_completed_result(
+        self,
+        payload: FlexibleTextEnrichmentRequest,
+    ) -> EnrichmentStoragePayload | None:
+        existing = await asyncio.to_thread(self.repository.get_enrichment_result, payload.news_id)
+        if existing is None:
+            return None
+        if existing.analysis_outcome != AnalysisOutcome.SUCCESS:
+            return None
+        if existing.analysis_status != AnalysisStatus.COMPLETED:
+            return None
+        if _normalize_link(existing.link) != _normalize_link(payload.link):
+            return None
+        return existing
 
 
 def build_api_enrichment_response(
@@ -110,12 +133,13 @@ def build_api_enrichment_response(
     ]
     xai_payload = _build_xai_payload(payload.xai, api_sentiment)
     xai_display_payload = _build_xai_display_payload(payload.xai, api_sentiment)
-    localized = build_localized_content(
+    localized = payload.localized or build_localized_content(
         title=payload.title,
         summary_3lines=summary_lines,
         xai=xai_payload,
         sentiment_label=api_sentiment.label if api_sentiment is not None else None,
         tickers=getattr(payload, "ticker", None),
+        xai_highlight_limit=settings.localized_xai_highlight_limit,
     )
 
     return ArticleEnrichmentResponse(
@@ -134,6 +158,10 @@ def build_api_enrichment_response(
         error=_build_error_detail(payload),
         stage_statuses=[_map_stage_status(stage) for stage in payload.stage_statuses],
     )
+
+
+def _normalize_link(value: object) -> str:
+    return str(value).strip().rstrip("/")
 
 
 def _build_sentiment_payload(
