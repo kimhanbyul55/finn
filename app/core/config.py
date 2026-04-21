@@ -19,6 +19,7 @@ class AppSettings:
     app_host: str
     app_port: int
     worker_poll_interval_seconds: float
+    worker_idle_log_interval_seconds: float
     enable_job_process_api: bool
     use_worker_backed_direct_enrichment: bool
     enable_inline_xai: bool
@@ -61,6 +62,9 @@ def get_settings() -> AppSettings:
         app_host=os.getenv("GENAI_APP_HOST", "127.0.0.1"),
         app_port=int(os.getenv("GENAI_APP_PORT", "8000")),
         worker_poll_interval_seconds=float(os.getenv("GENAI_WORKER_POLL_INTERVAL", "5")),
+        worker_idle_log_interval_seconds=float(
+            os.getenv("GENAI_WORKER_IDLE_LOG_INTERVAL", "60")
+        ),
         enable_job_process_api=_env_flag(
             "GENAI_ENABLE_JOB_PROCESS_API",
             default=not running_on_render,

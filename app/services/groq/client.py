@@ -3,18 +3,38 @@ from __future__ import annotations
 import logging
 import re
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
+from collections.abc import Iterator
 
 import requests
 
 from app.core import get_settings
+from app.core.logging import log_event
 
 logger = logging.getLogger(__name__)
 
 _RETRY_AFTER_PATTERN = re.compile(r"Please try again in ([0-9]+(?:\.[0-9]+)?)s", re.IGNORECASE)
+_groq_log_context: ContextVar[dict[str, object]] = ContextVar(
+    "groq_log_context",
+    default={},
+)
 
 
 def groq_is_enabled() -> bool:
     return bool(get_settings().groq_api_key)
+
+
+@contextmanager
+def groq_log_context(**fields: object) -> Iterator[None]:
+    """Attach request/job metadata to Groq logs emitted in this execution context."""
+    current = _groq_log_context.get()
+    merged = {**current, **{key: value for key, value in fields.items() if value is not None}}
+    token = _groq_log_context.set(merged)
+    try:
+        yield
+    finally:
+        _groq_log_context.reset(token)
 
 
 def groq_chat_completion(
@@ -40,14 +60,15 @@ def groq_chat_completion(
         ],
     }
 
-    logger.info(
-        "Groq request started.",
-        extra={
-            "request_label": label,
-            "model": model,
-            "system_prompt_chars": len(system_prompt),
-            "user_prompt_chars": len(user_prompt),
-        },
+    log_event(
+        logger,
+        logging.INFO,
+        "groq_request_started",
+        **_groq_context_fields(),
+        request_label=label,
+        model=model,
+        system_prompt_chars=len(system_prompt),
+        user_prompt_chars=len(user_prompt),
     )
 
     attempt = 0
@@ -73,16 +94,17 @@ def groq_chat_completion(
                 if isinstance(error_payload, dict)
                 else None
             )
-            logger.warning(
-                "Groq request failed.",
-                extra={
-                    "request_label": label,
-                    "model": model,
-                    "status_code": response.status_code,
-                    "retry_after_seconds": retry_after_seconds,
-                    "error_message": error_message,
-                    "attempt": attempt + 1,
-                },
+            log_event(
+                logger,
+                logging.WARNING,
+                "groq_request_failed",
+                **_groq_context_fields(),
+                request_label=label,
+                model=model,
+                status_code=response.status_code,
+                retry_after_seconds=retry_after_seconds,
+                error_message=error_message,
+                attempt=attempt + 1,
             )
             if response.status_code == 429 and retry_after_seconds and attempt + 1 < max_attempts:
                 time.sleep(retry_after_seconds)
@@ -92,15 +114,16 @@ def groq_chat_completion(
 
     payload = response.json()
     usage = payload.get("usage") or {}
-    logger.info(
-        "Groq request completed.",
-        extra={
-            "request_label": label,
-            "model": model,
-            "prompt_tokens": usage.get("prompt_tokens"),
-            "completion_tokens": usage.get("completion_tokens"),
-            "total_tokens": usage.get("total_tokens"),
-        },
+    log_event(
+        logger,
+        logging.INFO,
+        "groq_request_completed",
+        **_groq_context_fields(),
+        request_label=label,
+        model=model,
+        prompt_tokens=usage.get("prompt_tokens"),
+        completion_tokens=usage.get("completion_tokens"),
+        total_tokens=usage.get("total_tokens"),
     )
     choices = payload.get("choices") or []
     if not choices:
@@ -117,6 +140,10 @@ def _build_chat_completions_url(base_url: str) -> str:
     if normalized.endswith("/v1"):
         return f"{normalized}/chat/completions"
     return f"{normalized}/v1/chat/completions"
+
+
+def _groq_context_fields() -> dict[str, object]:
+    return dict(_groq_log_context.get())
 
 
 def _extract_retry_after_seconds(response: requests.Response) -> float | None:

@@ -21,6 +21,7 @@ from app.schemas.storage import (
     PipelineStageName,
 )
 from app.services.article_fetcher import fetch_article_text
+from app.services.groq import groq_log_context
 from app.services.mixed_detector import (
     detect_article_level_mixed,
     detect_ticker_level_mixed,
@@ -66,7 +67,13 @@ class EnrichmentOrchestrator:
         self._include_xai = settings.enable_inline_xai if include_xai is None else include_xai
 
     def run(self, request: ArticleEnrichmentRequest) -> EnrichmentStoragePayload:
-        return self._run_pipeline(request=request, provided_text=None)
+        with groq_log_context(
+            news_id=request.news_id,
+            link=str(request.link),
+            source=request.source,
+            tickers=request.ticker,
+        ):
+            return self._run_pipeline(request=request, provided_text=None)
 
     def run_with_text(
         self,
@@ -76,15 +83,26 @@ class EnrichmentOrchestrator:
         summary_text: str | None = None,
     ) -> EnrichmentStoragePayload:
         provided_text = (article_text or "").strip() or (summary_text or "").strip() or None
-        return self._run_pipeline(
-            request=request,
-            provided_text=provided_text,
+        with groq_log_context(
+            news_id=request.news_id,
+            link=str(request.link),
+            source=request.source,
+            tickers=request.ticker,
             text_source=(
-                ArticleTextSource.PROVIDED_ARTICLE_TEXT
+                ArticleTextSource.PROVIDED_ARTICLE_TEXT.value
                 if article_text and article_text.strip()
-                else ArticleTextSource.PROVIDED_SUMMARY_TEXT
+                else ArticleTextSource.PROVIDED_SUMMARY_TEXT.value
             ) if provided_text is not None else None,
-        )
+        ):
+            return self._run_pipeline(
+                request=request,
+                provided_text=provided_text,
+                text_source=(
+                    ArticleTextSource.PROVIDED_ARTICLE_TEXT
+                    if article_text and article_text.strip()
+                    else ArticleTextSource.PROVIDED_SUMMARY_TEXT
+                ) if provided_text is not None else None,
+            )
 
     def _run_pipeline(
         self,

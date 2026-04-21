@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import dataclass
 from typing import Final
@@ -23,6 +24,10 @@ from app.services.text_cleaner import clean_article_text
 
 
 MODEL_NAME: Final[str] = "ProsusAI/finbert"
+MODEL_REVISION: Final[str] = os.getenv(
+    "GENAI_FINBERT_MODEL_REVISION",
+    "4556d13015211d73dccd3fdd39d39232506f3e43",
+)
 MAX_TOKENS_PER_CHUNK: Final[int] = 448
 OVERLAP_SENTENCES: Final[int] = 1
 DEFAULT_MAX_CHUNKS: Final[int] = 8
@@ -170,9 +175,16 @@ def _get_finbert_components():
 
     with _MODEL_LOCK:
         if _TOKENIZER is None:
-            _TOKENIZER = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
+            _TOKENIZER = AutoTokenizer.from_pretrained(
+                MODEL_NAME,
+                revision=MODEL_REVISION,
+                use_fast=True,
+            )
         if _MODEL is None:
-            _MODEL = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+            _MODEL = AutoModelForSequenceClassification.from_pretrained(
+                MODEL_NAME,
+                revision=MODEL_REVISION,
+            )
             _MODEL.eval()
         return _TOKENIZER, _MODEL
 
