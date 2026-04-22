@@ -13,7 +13,7 @@ def test_build_localized_content_falls_back_without_api_key(monkeypatch) -> None
     _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     localized = build_localized_content(
         title="Apple raises guidance",
@@ -48,13 +48,13 @@ def test_build_localized_content_falls_back_without_api_key(monkeypatch) -> None
     assert localized.ticker_box_labels["revenue"] == "매출"
 
 
-def test_build_localized_content_uses_groq_when_api_key_present(monkeypatch) -> None:
+def test_build_localized_content_uses_Gemini_when_api_key_present(monkeypatch) -> None:
     _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
-    monkeypatch.setenv("GROQ_API_KEY", "test-key")
-    monkeypatch.setenv("GROQ_API_BASE_URL", "https://api.groq.com/openai")
-    monkeypatch.setenv("GROQ_TRANSLATION_MODEL", "llama-3.1-8b-instant")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-1.5-flash")
 
     class _Response:
         def raise_for_status(self) -> None:
@@ -62,17 +62,17 @@ def test_build_localized_content_uses_groq_when_api_key_present(monkeypatch) -> 
 
         def json(self) -> dict[str, object]:
             return {
-                "choices": [
+                "candidates": [
                     {
-                        "message": {
-                            "content": (
+                        "content": {
+                            "parts": [{"text": (
                                 "title|||애플이 가이던스를 상향했습니다\n"
                                 "summary_1|||매출은 12% 증가했습니다.\n"
                                 "summary_2|||마진이 개선되었습니다.\n"
                                 "summary_3|||가이던스가 상향되었습니다.\n"
                                 "xai_explanation|||강세 판단에 영향을 준 핵심 문장입니다.\n"
                                 "xai_highlight_1|||가이던스가 상향되었습니다."
-                            )
+                            )}]
                         }
                     }
                 ]
@@ -81,7 +81,7 @@ def test_build_localized_content_uses_groq_when_api_key_present(monkeypatch) -> 
     def _fake_post(*args, **kwargs):
         return _Response()
 
-    monkeypatch.setattr("app.services.groq.client.requests.post", _fake_post)
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _fake_post)
 
     localized = build_localized_content(
         title="Apple raises guidance",
@@ -114,16 +114,16 @@ def test_build_localized_content_uses_groq_when_api_key_present(monkeypatch) -> 
     assert localized.xai.highlights[0].excerpt == "가이던스가 상향되었습니다."
 
 
-def test_build_localized_content_can_disable_groq_for_response_fallback(monkeypatch) -> None:
+def test_build_localized_content_can_disable_Gemini_for_response_fallback(monkeypatch) -> None:
     _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
-    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
     def _fail_post(*args, **kwargs):
-        raise AssertionError("response fallback should not spend Groq tokens")
+        raise AssertionError("response fallback should not spend Gemini tokens")
 
-    monkeypatch.setattr("app.services.groq.client.requests.post", _fail_post)
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _fail_post)
 
     localized = build_localized_content(
         title="Apple raises guidance",
@@ -135,7 +135,7 @@ def test_build_localized_content_can_disable_groq_for_response_fallback(monkeypa
         xai=None,
         sentiment_label=SentimentLabel.BULLISH,
         tickers=["AAPL"],
-        allow_groq=False,
+        allow_gemini=False,
     )
 
     assert localized.title == "Apple raises guidance"
@@ -143,13 +143,13 @@ def test_build_localized_content_can_disable_groq_for_response_fallback(monkeypa
     assert localized.sentiment_label == "강세"
 
 
-def test_build_localized_content_reuses_cached_groq_translations(monkeypatch) -> None:
+def test_build_localized_content_reuses_cached_Gemini_translations(monkeypatch) -> None:
     _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
-    monkeypatch.setenv("GROQ_API_KEY", "test-key")
-    monkeypatch.setenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
-    monkeypatch.setenv("GROQ_TRANSLATION_MODEL", "llama-3.1-8b-instant")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-1.5-flash")
 
     calls = {"count": 0}
     class _Response:
@@ -159,15 +159,15 @@ def test_build_localized_content_reuses_cached_groq_translations(monkeypatch) ->
         def json(self) -> dict[str, object]:
             calls["count"] += 1
             return {
-                "choices": [
+                "candidates": [
                     {
-                        "message": {
-                            "content": (
+                        "content": {
+                            "parts": [{"text": (
                                 "title|||애플이 가이던스를 상향했습니다\n"
                                 "summary_1|||매출은 12% 증가했습니다.\n"
                                 "summary_2|||마진이 개선되었습니다.\n"
                                 "summary_3|||가이던스가 상향되었습니다."
-                            )
+                            )}]
                         }
                     }
                 ]
@@ -176,7 +176,7 @@ def test_build_localized_content_reuses_cached_groq_translations(monkeypatch) ->
     def _fake_post(*args, **kwargs):
         return _Response()
 
-    monkeypatch.setattr("app.services.groq.client.requests.post", _fake_post)
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _fake_post)
 
     kwargs = dict(
         title="Apple raises guidance",
@@ -202,9 +202,9 @@ def test_build_localized_content_skips_already_korean_summary_lines(monkeypatch)
     _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
-    monkeypatch.setenv("GROQ_API_KEY", "test-key")
-    monkeypatch.setenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
-    monkeypatch.setenv("GROQ_TRANSLATION_MODEL", "llama-3.1-8b-instant")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-1.5-flash")
 
     captured_payloads: list[str] = []
 
@@ -214,20 +214,20 @@ def test_build_localized_content_skips_already_korean_summary_lines(monkeypatch)
 
         def json(self) -> dict[str, object]:
             return {
-                "choices": [
+                "candidates": [
                     {
-                        "message": {
-                            "content": "title|||애플이 가이던스를 상향했습니다"
+                        "content": {
+                            "parts": [{"text": "title|||애플이 가이던스를 상향했습니다"}]
                         }
                     }
                 ]
             }
 
     def _fake_post(*args, **kwargs):
-        captured_payloads.append(kwargs["json"]["messages"][1]["content"])
+        captured_payloads.append(kwargs["json"]["contents"][0]["parts"][0]["text"])
         return _Response()
 
-    monkeypatch.setattr("app.services.groq.client.requests.post", _fake_post)
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _fake_post)
 
     localized = build_localized_content(
         title="Apple raises guidance",
@@ -251,9 +251,10 @@ def test_build_localized_content_repairs_mixed_language_translation(monkeypatch)
     _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
-    monkeypatch.setenv("GROQ_API_KEY", "test-key")
-    monkeypatch.setenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1")
-    monkeypatch.setenv("GROQ_TRANSLATION_MODEL", "llama-3.1-8b-instant")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-1.5-flash")
+    monkeypatch.setenv("GENAI_ENABLE_GEMINI_TRANSLATION_REPAIR", "true")
 
     calls = {"count": 0}
 
@@ -267,12 +268,12 @@ def test_build_localized_content_repairs_mixed_language_translation(monkeypatch)
                 content = "title|||VAL खरीदना 지금이 좋은가, 还是等待해야 하는가?"
             else:
                 content = "title|||VAL을 지금 매수할 만한지 신중히 검토해야 한다"
-            return {"choices": [{"message": {"content": content}}]}
+            return {"candidates": [{"content": {"parts": [{"text": content}]}}]}
 
     def _fake_post(*args, **kwargs):
         return _Response()
 
-    monkeypatch.setattr("app.services.groq.client.requests.post", _fake_post)
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _fake_post)
 
     localized = build_localized_content(
         title="Is it time to buy VAL or wait?",

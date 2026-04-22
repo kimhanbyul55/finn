@@ -28,7 +28,7 @@ from app.schemas.xai import XAIContributionDirection, XAIResult
 from app.services.orchestrator import EnrichmentOrchestrator
 from app.services.response_state import map_analysis_status_to_error_code
 from app.services.translation import build_localized_content
-from app.services.groq import groq_log_context
+from app.services.gemini import gemini_log_context
 
 settings = get_settings()
 
@@ -134,10 +134,10 @@ def build_api_enrichment_response(
     ]
     xai_payload = _build_xai_payload(payload.xai, api_sentiment)
     xai_display_payload = _build_xai_display_payload(payload.xai, api_sentiment)
-    with groq_log_context(
+    with gemini_log_context(
         news_id=payload.news_id,
         link=str(payload.link),
-        groq_context="api_response_localized_fallback",
+        gemini_context="api_response_localized_fallback",
     ):
         localized = payload.localized or build_localized_content(
             title=payload.title,
@@ -146,7 +146,7 @@ def build_api_enrichment_response(
             sentiment_label=api_sentiment.label if api_sentiment is not None else None,
             tickers=getattr(payload, "ticker", None),
             xai_highlight_limit=settings.localized_xai_highlight_limit,
-            allow_groq=False,
+            allow_gemini=False,
         )
 
     return ArticleEnrichmentResponse(

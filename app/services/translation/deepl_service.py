@@ -14,7 +14,7 @@ from app.schemas.enrichment import (
     XAIHighlightItem,
     XAIPayload,
 )
-from app.services.groq import groq_chat_completion, groq_is_enabled
+from app.services.gemini import gemini_generate_content, gemini_is_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ def build_localized_content(
     sentiment_label: SentimentLabel | None,
     tickers: list[str] | None = None,
     xai_highlight_limit: int | None = None,
-    allow_groq: bool = True,
+    allow_gemini: bool = True,
 ) -> LocalizedArticleContent:
     limited_xai = _limit_xai_payload(xai, highlight_limit=xai_highlight_limit)
     translations = _translate_localized_payload(
@@ -78,7 +78,7 @@ def build_localized_content(
         summary_3lines=summary_3lines,
         xai=limited_xai,
         tickers=tickers,
-        allow_groq=allow_groq,
+        allow_gemini=allow_gemini,
     )
     translated_title = translations["title"]
     translated_summary = [
@@ -141,17 +141,17 @@ def _translate_localized_payload(
     summary_3lines: list[SummaryLine],
     xai: XAIPayload | None,
     tickers: list[str] | None,
-    allow_groq: bool,
+    allow_gemini: bool,
 ) -> dict[str, str]:
     tasks = _build_translation_tasks(title=title, summary_3lines=summary_3lines, xai=xai)
     original_values = {task.key: task.text.strip() for task in tasks}
-    if not allow_groq or not groq_is_enabled():
+    if not allow_gemini or not gemini_is_enabled():
         return original_values
 
     try:
         return _translate_tasks(tasks, tickers=tickers)
     except Exception:
-        logger.exception("Groq translation failed; falling back to source text.")
+        logger.exception("Gemini translation failed; falling back to source text.")
         return original_values
 
 
@@ -184,7 +184,7 @@ def _translate_tasks(
     prepared_tasks = [
         _TranslationTask(
             key=task.key,
-            text=_prepare_translation_input(task.text.strip(), char_limit=get_settings().groq_translation_char_limit),
+            text=_prepare_translation_input(task.text.strip(), char_limit=get_settings().gemini_translation_char_limit),
         )
         for task in tasks
         if task.text.strip() and not _looks_already_korean(task.text)
@@ -195,8 +195,8 @@ def _translate_tasks(
     batch_payload = _build_translation_batch_payload(prepared_tasks)
     masked = _mask_text(batch_payload, tickers=tickers)
     translated = _cached_translation_batch_completion(
-        get_settings().groq_api_base_url,
-        get_settings().groq_translation_model,
+        get_settings().gemini_api_base_url,
+        get_settings().gemini_translation_model,
         masked.text,
         "translate_localized_payload",
     )
@@ -214,6 +214,8 @@ def _translate_tasks(
             invalid_tasks.append(task)
 
     if invalid_tasks:
+        if not get_settings().enable_gemini_translation_repair:
+            return results
         repaired = _repair_invalid_translations(invalid_tasks, tickers=tickers)
         results.update(repaired)
     return results
@@ -271,13 +273,13 @@ def _repair_invalid_translations(
     masked = _mask_text(batch_payload, tickers=tickers)
     try:
         translated = _cached_translation_repair_completion(
-            get_settings().groq_api_base_url,
-            get_settings().groq_translation_model,
+            get_settings().gemini_api_base_url,
+            get_settings().gemini_translation_model,
             masked.text,
             "translate_localized_payload_repair",
         )
     except Exception:
-        logger.exception("Groq translation repair failed; falling back to source text.")
+        logger.exception("Gemini translation repair failed; falling back to source text.")
         return {task.key: task.text.strip() for task in tasks}
 
     unmasked = _unmask_text(translated, masked.replacements)
@@ -291,7 +293,7 @@ def _repair_invalid_translations(
             repaired[task.key] = polished
         else:
             logger.warning(
-                "Groq translation failed Korean validation; falling back to source text.",
+                "Gemini translation failed Korean validation; falling back to source text.",
                 extra={"translation_key": task.key},
             )
             repaired[task.key] = original
@@ -307,22 +309,22 @@ def _translate_with_fallback(
     normalized = text.strip()
     if not normalized:
         return normalized
-    if not groq_is_enabled():
+    if not gemini_is_enabled():
         return normalized
     try:
         return _translate_text(normalized, tickers=tickers, request_label=request_label)
     except Exception:
-        logger.exception("Groq translation failed; falling back to source text.")
+        logger.exception("Gemini translation failed; falling back to source text.")
         return normalized
 
 
 def _translate_text(text: str, *, tickers: list[str] | None, request_label: str) -> str:
     settings = get_settings()
-    prepared = _prepare_translation_input(text, char_limit=settings.groq_translation_char_limit)
+    prepared = _prepare_translation_input(text, char_limit=settings.gemini_translation_char_limit)
     masked = _mask_text(prepared, tickers=tickers)
     translated = _cached_translation_completion(
-        settings.groq_api_base_url,
-        settings.groq_translation_model,
+        settings.gemini_api_base_url,
+        settings.gemini_translation_model,
         masked.text,
         request_label,
     )
@@ -360,7 +362,7 @@ def _unmask_text(text: str, replacements: dict[str, str]) -> str:
 @lru_cache(maxsize=512)
 def _cached_translation_completion(base_url: str, model: str, masked_text: str, request_label: str) -> str:
     del base_url
-    return groq_chat_completion(
+    return gemini_generate_content(
         model=model,
         system_prompt=(
             "You are a Korean financial news translator. "
@@ -386,7 +388,7 @@ def _cached_translation_batch_completion(
     request_label: str,
 ) -> str:
     del base_url
-    return groq_chat_completion(
+    return gemini_generate_content(
         model=model,
         system_prompt=(
             "You are a Korean financial news translator. "
@@ -416,7 +418,7 @@ def _cached_translation_repair_completion(
     request_label: str,
 ) -> str:
     del base_url
-    return groq_chat_completion(
+    return gemini_generate_content(
         model=model,
         system_prompt=(
             "You are a strict Korean-only financial news translation validator and repairer. "

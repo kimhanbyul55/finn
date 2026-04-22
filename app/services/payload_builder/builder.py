@@ -109,13 +109,15 @@ def _build_stored_localized_content(
         for index, text in enumerate(summary_3lines, start=1)
     ]
     localized_sentiment = _map_sentiment_label(sentiment_label, is_mixed=is_mixed)
+    settings = get_settings()
     return build_localized_content(
         title=title,
         summary_3lines=summary_lines,
         xai=_build_localized_xai_payload(xai_result, localized_sentiment),
         sentiment_label=localized_sentiment,
         tickers=tickers,
-        xai_highlight_limit=get_settings().localized_xai_highlight_limit,
+        xai_highlight_limit=settings.localized_xai_highlight_limit,
+        allow_gemini=settings.enable_gemini_translation,
     )
 
 

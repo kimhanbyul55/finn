@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from collections.abc import Iterator
+from urllib.parse import quote
 
 import requests
 
@@ -15,29 +16,29 @@ from app.core.logging import log_event
 logger = logging.getLogger(__name__)
 
 _RETRY_AFTER_PATTERN = re.compile(r"Please try again in ([0-9]+(?:\.[0-9]+)?)s", re.IGNORECASE)
-_groq_log_context: ContextVar[dict[str, object]] = ContextVar(
-    "groq_log_context",
+_gemini_log_context: ContextVar[dict[str, object]] = ContextVar(
+    "gemini_log_context",
     default={},
 )
 
 
-def groq_is_enabled() -> bool:
-    return bool(get_settings().groq_api_key)
+def gemini_is_enabled() -> bool:
+    return bool(get_settings().gemini_api_key)
 
 
 @contextmanager
-def groq_log_context(**fields: object) -> Iterator[None]:
-    """Attach request/job metadata to Groq logs emitted in this execution context."""
-    current = _groq_log_context.get()
+def gemini_log_context(**fields: object) -> Iterator[None]:
+    """Attach request/job metadata to Gemini logs emitted in this execution context."""
+    current = _gemini_log_context.get()
     merged = {**current, **{key: value for key, value in fields.items() if value is not None}}
-    token = _groq_log_context.set(merged)
+    token = _gemini_log_context.set(merged)
     try:
         yield
     finally:
-        _groq_log_context.reset(token)
+        _gemini_log_context.reset(token)
 
 
-def groq_chat_completion(
+def gemini_generate_content(
     *,
     system_prompt: str,
     user_prompt: str,
@@ -46,25 +47,31 @@ def groq_chat_completion(
     request_label: str | None = None,
 ) -> str:
     settings = get_settings()
-    if not settings.groq_api_key:
-        raise RuntimeError("Groq API key is not configured.")
+    if not settings.gemini_api_key:
+        raise RuntimeError("Gemini API key is not configured.")
 
     label = request_label or "unknown"
-    url = _build_chat_completions_url(settings.groq_api_base_url)
+    url = _build_generate_content_url(settings.gemini_api_base_url, model)
     payload = {
-        "model": model,
-        "temperature": temperature,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+        "system_instruction": {
+            "parts": [{"text": system_prompt}],
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": user_prompt}],
+            }
         ],
+        "generationConfig": {
+            "temperature": temperature,
+        },
     }
 
     log_event(
         logger,
         logging.INFO,
-        "groq_request_started",
-        **_groq_context_fields(),
+        "gemini_request_started",
+        **_gemini_context_fields(),
         request_label=label,
         model=model,
         system_prompt_chars=len(system_prompt),
@@ -77,11 +84,11 @@ def groq_chat_completion(
         response = requests.post(
             url,
             headers={
-                "Authorization": f"Bearer {settings.groq_api_key}",
+                "x-goog-api-key": settings.gemini_api_key,
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=settings.groq_timeout_seconds,
+            timeout=settings.gemini_timeout_seconds,
         )
         try:
             response.raise_for_status()
@@ -97,8 +104,8 @@ def groq_chat_completion(
             log_event(
                 logger,
                 logging.WARNING,
-                "groq_request_failed",
-                **_groq_context_fields(),
+                "gemini_request_failed",
+                **_gemini_context_fields(),
                 request_label=label,
                 model=model,
                 status_code=response.status_code,
@@ -109,8 +116,7 @@ def groq_chat_completion(
             can_retry_rate_limit = (
                 response.status_code == 429
                 and retry_after_seconds is not None
-                and retry_after_seconds <= settings.groq_retry_after_max_seconds
-                and not _is_daily_token_limit_error(error_message)
+                and retry_after_seconds <= settings.gemini_retry_after_max_seconds
                 and attempt + 1 < max_attempts
             )
             if can_retry_rate_limit:
@@ -119,38 +125,56 @@ def groq_chat_completion(
                 continue
             raise exc
 
-    payload = response.json()
-    usage = payload.get("usage") or {}
+    data = response.json()
+    usage = data.get("usageMetadata") or {}
     log_event(
         logger,
         logging.INFO,
-        "groq_request_completed",
-        **_groq_context_fields(),
+        "gemini_request_completed",
+        **_gemini_context_fields(),
         request_label=label,
         model=model,
-        prompt_tokens=usage.get("prompt_tokens"),
-        completion_tokens=usage.get("completion_tokens"),
-        total_tokens=usage.get("total_tokens"),
+        prompt_tokens=usage.get("promptTokenCount"),
+        completion_tokens=usage.get("candidatesTokenCount"),
+        total_tokens=usage.get("totalTokenCount"),
     )
-    choices = payload.get("choices") or []
-    if not choices:
-        raise RuntimeError("Groq response contained no choices.")
-    message = choices[0].get("message") or {}
-    content = message.get("content")
-    if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("Groq response contained no message content.")
-    return content.strip()
+    return _extract_response_text(data)
 
 
-def _build_chat_completions_url(base_url: str) -> str:
-    normalized = base_url.rstrip("/")
-    if normalized.endswith("/v1"):
-        return f"{normalized}/chat/completions"
-    return f"{normalized}/v1/chat/completions"
+def _build_generate_content_url(base_url: str, model: str) -> str:
+    normalized_base = base_url.rstrip("/")
+    normalized_model = model.removeprefix("models/").strip("/")
+    return f"{normalized_base}/models/{quote(normalized_model, safe='')}:generateContent"
 
 
-def _groq_context_fields() -> dict[str, object]:
-    return dict(_groq_log_context.get())
+def _gemini_context_fields() -> dict[str, object]:
+    return dict(_gemini_log_context.get())
+
+
+def _extract_response_text(payload: dict[str, object]) -> str:
+    candidates = payload.get("candidates") or []
+    if not isinstance(candidates, list) or not candidates:
+        raise RuntimeError("Gemini response contained no candidates.")
+
+    candidate = candidates[0]
+    if not isinstance(candidate, dict):
+        raise RuntimeError("Gemini response candidate was malformed.")
+    content = candidate.get("content") or {}
+    if not isinstance(content, dict):
+        raise RuntimeError("Gemini response content was malformed.")
+    parts = content.get("parts") or []
+    if not isinstance(parts, list):
+        raise RuntimeError("Gemini response parts were malformed.")
+
+    texts = [
+        part.get("text", "")
+        for part in parts
+        if isinstance(part, dict) and isinstance(part.get("text"), str)
+    ]
+    combined = "\n".join(text.strip() for text in texts if text.strip()).strip()
+    if not combined:
+        raise RuntimeError("Gemini response contained no text content.")
+    return combined
 
 
 def _extract_retry_after_seconds(response: requests.Response) -> float | None:
@@ -170,13 +194,6 @@ def _extract_retry_after_seconds(response: requests.Response) -> float | None:
             if match:
                 return float(match.group(1))
     return None
-
-
-def _is_daily_token_limit_error(error_message: str | None) -> bool:
-    if not error_message:
-        return False
-    normalized = error_message.lower()
-    return "tokens per day" in normalized or "tpd" in normalized
 
 
 def _safe_json(response: requests.Response) -> dict[str, object] | None:

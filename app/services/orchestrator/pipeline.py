@@ -21,7 +21,7 @@ from app.schemas.storage import (
     PipelineStageName,
 )
 from app.services.article_fetcher import fetch_article_text
-from app.services.groq import groq_log_context
+from app.services.gemini import gemini_log_context
 from app.services.mixed_detector import (
     detect_article_level_mixed,
     detect_ticker_level_mixed,
@@ -67,7 +67,7 @@ class EnrichmentOrchestrator:
         self._include_xai = settings.enable_inline_xai if include_xai is None else include_xai
 
     def run(self, request: ArticleEnrichmentRequest) -> EnrichmentStoragePayload:
-        with groq_log_context(
+        with gemini_log_context(
             news_id=request.news_id,
             link=str(request.link),
             source=request.source,
@@ -83,7 +83,7 @@ class EnrichmentOrchestrator:
         summary_text: str | None = None,
     ) -> EnrichmentStoragePayload:
         provided_text = (article_text or "").strip() or (summary_text or "").strip() or None
-        with groq_log_context(
+        with gemini_log_context(
             news_id=request.news_id,
             link=str(request.link),
             source=request.source,

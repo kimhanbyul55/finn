@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from app.core import get_settings
-from app.services.groq import groq_chat_completion, groq_is_enabled
+from app.services.gemini import gemini_generate_content, gemini_is_enabled
 from app.services.text_cleaner import clean_article_text
 
 logger = logging.getLogger(__name__)
@@ -104,10 +104,10 @@ def summarize_to_three_lines(title: str, article_text: str) -> list[str]:
     if not cleaned_text:
         return ["", "", ""]
 
-    groq_input = _prepare_summary_input(cleaned_text)
-    groq_summary = _summarize_with_groq(title=title, article_text=groq_input)
-    if groq_summary is not None:
-        return groq_summary
+    gemini_input = _prepare_summary_input(cleaned_text)
+    gemini_summary = _summarize_with_gemini(title=title, article_text=gemini_input)
+    if gemini_summary is not None:
+        return gemini_summary
 
     sentences = _extract_sentences(cleaned_text)
     if not sentences:
@@ -128,37 +128,37 @@ def summarize_to_three_lines(title: str, article_text: str) -> list[str]:
     return lines[:SUMMARY_LINE_COUNT]
 
 
-def _summarize_with_groq(*, title: str, article_text: str) -> list[str] | None:
-    if not groq_is_enabled():
+def _summarize_with_gemini(*, title: str, article_text: str) -> list[str] | None:
+    settings = get_settings()
+    if not settings.enable_gemini_summary or not gemini_is_enabled():
         return None
 
-    settings = get_settings()
-    if len(article_text) > settings.groq_summary_hard_char_limit:
+    if len(article_text) > settings.gemini_summary_hard_char_limit:
         logger.info(
-            "Groq summary skipped for oversized article; using heuristic fallback.",
+            "Gemini summary skipped for oversized article; using heuristic fallback.",
             extra={"article_text_length": len(article_text)},
         )
         return None
     try:
         content = _cached_summary_completion(
-            settings.groq_api_base_url,
-            settings.groq_summary_model,
+            settings.gemini_api_base_url,
+            settings.gemini_summary_model,
             title,
             article_text,
         )
     except Exception:
-        logger.exception("Groq summary generation failed; falling back to heuristic summarizer.")
+        logger.exception("Gemini summary generation failed; falling back to heuristic summarizer.")
         return None
 
     lines = _parse_summary_lines(content)
     if len(lines) != SUMMARY_LINE_COUNT or not all(line.strip() for line in lines):
         logger.warning(
-            "Groq summary generation returned unusable output; falling back to heuristic summarizer."
+            "Gemini summary generation returned unusable output; falling back to heuristic summarizer."
         )
         return None
     if not _summary_preserves_numeric_facts(lines, title=title, article_text=article_text):
         logger.warning(
-            "Groq summary generation introduced unsupported numeric facts; falling back to heuristic summarizer."
+            "Gemini summary generation introduced unsupported numeric facts; falling back to heuristic summarizer."
         )
         return None
     return lines
@@ -211,7 +211,7 @@ def _extract_numeric_tokens(text: str) -> set[str]:
 @lru_cache(maxsize=256)
 def _cached_summary_completion(base_url: str, model: str, title: str, article_text: str) -> str:
     del base_url
-    return groq_chat_completion(
+    return gemini_generate_content(
         model=model,
         system_prompt=(
             "You are a Korean financial news editor. "
@@ -236,18 +236,18 @@ def _cached_summary_completion(base_url: str, model: str, title: str, article_te
 def _prepare_summary_input(text: str) -> str:
     settings = get_settings()
     normalized = _normalize_text(text)
-    if len(normalized) <= settings.groq_summary_soft_char_limit:
+    if len(normalized) <= settings.gemini_summary_soft_char_limit:
         return normalized
 
     sentences = _extract_sentences(normalized)
     if not sentences:
-        return normalized[: settings.groq_summary_soft_char_limit]
+        return normalized[: settings.gemini_summary_soft_char_limit]
 
     prepared = _build_balanced_summary_context(
         sentences,
-        char_limit=settings.groq_summary_soft_char_limit,
+        char_limit=settings.gemini_summary_soft_char_limit,
     )
-    return prepared or normalized[: settings.groq_summary_soft_char_limit]
+    return prepared or normalized[: settings.gemini_summary_soft_char_limit]
 
 
 def _build_balanced_summary_context(sentences: list[str], *, char_limit: int) -> str:

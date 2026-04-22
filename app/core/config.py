@@ -32,15 +32,18 @@ class AppSettings:
     deepl_api_base_url: str
     deepl_target_lang: str
     deepl_timeout_seconds: float
-    groq_api_key: str | None
-    groq_api_base_url: str
-    groq_summary_model: str
-    groq_translation_model: str
-    groq_timeout_seconds: float
-    groq_retry_after_max_seconds: float
-    groq_summary_soft_char_limit: int
-    groq_summary_hard_char_limit: int
-    groq_translation_char_limit: int
+    gemini_api_key: str | None
+    gemini_api_base_url: str
+    enable_gemini_summary: bool
+    enable_gemini_translation: bool
+    enable_gemini_translation_repair: bool
+    gemini_summary_model: str
+    gemini_translation_model: str
+    gemini_timeout_seconds: float
+    gemini_retry_after_max_seconds: float
+    gemini_summary_soft_char_limit: int
+    gemini_summary_hard_char_limit: int
+    gemini_translation_char_limit: int
     localized_xai_highlight_limit: int
     fetch_blocked_domains: tuple[str, ...]
 
@@ -93,21 +96,27 @@ def get_settings() -> AppSettings:
         ).rstrip("/"),
         deepl_target_lang=(os.getenv("DEEPL_TARGET_LANG") or "KO").strip().upper(),
         deepl_timeout_seconds=float(os.getenv("DEEPL_TIMEOUT_SECONDS", "8")),
-        groq_api_key=os.getenv("GROQ_API_KEY"),
-        groq_api_base_url=(
-            os.getenv("GROQ_API_BASE_URL") or "https://api.groq.com/openai"
+        gemini_api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
+        gemini_api_base_url=(
+            os.getenv("GEMINI_API_BASE_URL") or "https://generativelanguage.googleapis.com/v1beta"
         ).rstrip("/"),
-        groq_summary_model=(
-            os.getenv("GROQ_SUMMARY_MODEL") or "llama-3.1-8b-instant"
+        enable_gemini_summary=_env_flag("GENAI_ENABLE_GEMINI_SUMMARY", default=True),
+        enable_gemini_translation=_env_flag("GENAI_ENABLE_GEMINI_TRANSLATION", default=False),
+        enable_gemini_translation_repair=_env_flag(
+            "GENAI_ENABLE_GEMINI_TRANSLATION_REPAIR",
+            default=False,
+        ),
+        gemini_summary_model=(
+            os.getenv("GEMINI_SUMMARY_MODEL") or "gemini-1.5-flash"
         ).strip(),
-        groq_translation_model=(
-            os.getenv("GROQ_TRANSLATION_MODEL") or "llama-3.1-8b-instant"
+        gemini_translation_model=(
+            os.getenv("GEMINI_TRANSLATION_MODEL") or "gemini-1.5-flash"
         ).strip(),
-        groq_timeout_seconds=float(os.getenv("GROQ_TIMEOUT_SECONDS", "20")),
-        groq_retry_after_max_seconds=float(os.getenv("GROQ_RETRY_AFTER_MAX_SECONDS", "0")),
-        groq_summary_soft_char_limit=int(os.getenv("GROQ_SUMMARY_SOFT_CHAR_LIMIT", "3500")),
-        groq_summary_hard_char_limit=int(os.getenv("GROQ_SUMMARY_HARD_CHAR_LIMIT", "6500")),
-        groq_translation_char_limit=int(os.getenv("GROQ_TRANSLATION_CHAR_LIMIT", "1200")),
+        gemini_timeout_seconds=float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20")),
+        gemini_retry_after_max_seconds=float(os.getenv("GEMINI_RETRY_AFTER_MAX_SECONDS", "0")),
+        gemini_summary_soft_char_limit=int(os.getenv("GEMINI_SUMMARY_SOFT_CHAR_LIMIT", "3500")),
+        gemini_summary_hard_char_limit=int(os.getenv("GEMINI_SUMMARY_HARD_CHAR_LIMIT", "6500")),
+        gemini_translation_char_limit=int(os.getenv("GEMINI_TRANSLATION_CHAR_LIMIT", "1200")),
         localized_xai_highlight_limit=int(os.getenv("GENAI_LOCALIZED_XAI_HIGHLIGHT_LIMIT", "2")),
         fetch_blocked_domains=_parse_csv_env(
             "GENAI_FETCH_BLOCKED_DOMAINS",
