@@ -135,9 +135,11 @@ def _run_startup_checks() -> None:
 
     runtime = get_runtime_safety_snapshot()
     if runtime["suspicious_gpu_runtime"]:
-        warnings.append(
-            "GPU runtime artifacts detected in CPU-target service. Check Dockerfile/build path."
-        )
+        message = "GPU runtime artifacts detected in CPU-target service. Check Dockerfile/build path."
+        if settings.fail_on_suspicious_gpu_runtime:
+            errors.append(message)
+        else:
+            warnings.append(message)
 
     if settings.enable_gemini_summary and not settings.gemini_api_key:
         warnings.append(
@@ -169,6 +171,7 @@ def _run_startup_checks() -> None:
         "worker_startup_check_passed",
         backend=backend,
         gemini_summary_enabled=settings.enable_gemini_summary,
+        fail_on_suspicious_gpu_runtime=settings.fail_on_suspicious_gpu_runtime,
         runtime_suspicious_gpu_runtime=bool(runtime["suspicious_gpu_runtime"]),
         runtime_torch_cuda_version=runtime["torch_cuda_version"],
         runtime_torch_cuda_available=bool(runtime["torch_cuda_available"]),

@@ -15,7 +15,8 @@ from app.core.auth import (
     is_basic_auth_authorized,
     unauthorized_basic_auth_response,
 )
-from app.core.logging import configure_logging
+from app.core.logging import configure_logging, log_event
+from app.core.runtime_safety import get_runtime_safety_snapshot
 from app.db import initialize_database_backend
 
 
@@ -35,6 +36,20 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def warm_database_backend() -> None:
+    runtime = get_runtime_safety_snapshot()
+    if runtime["suspicious_gpu_runtime"]:
+        log_event(
+            logger,
+            logging.ERROR if settings.fail_on_suspicious_gpu_runtime else logging.WARNING,
+            "runtime_gpu_safety_check_failed",
+            fail_on_suspicious_gpu_runtime=settings.fail_on_suspicious_gpu_runtime,
+            runtime_torch_cuda_version=runtime["torch_cuda_version"],
+            runtime_torch_cuda_available=bool(runtime["torch_cuda_available"]),
+            runtime_gpu_packages_detected=",".join(runtime["gpu_packages_detected"]),
+        )
+        if settings.fail_on_suspicious_gpu_runtime:
+            raise RuntimeError("Suspicious GPU runtime artifacts detected in CPU-target service.")
+
     async def _initialize_in_background() -> None:
         try:
             await asyncio.to_thread(initialize_database_backend)

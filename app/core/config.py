@@ -40,6 +40,7 @@ class AppSettings:
     gemini_summary_hard_char_limit: int
     gemini_translation_char_limit: int
     localized_xai_highlight_limit: int
+    fail_on_suspicious_gpu_runtime: bool
     fetch_blocked_domains: tuple[str, ...]
 
     @property
@@ -102,6 +103,10 @@ def get_settings() -> AppSettings:
         gemini_summary_hard_char_limit=int(os.getenv("GEMINI_SUMMARY_HARD_CHAR_LIMIT", "6500")),
         gemini_translation_char_limit=int(os.getenv("GEMINI_TRANSLATION_CHAR_LIMIT", "1200")),
         localized_xai_highlight_limit=int(os.getenv("GENAI_LOCALIZED_XAI_HIGHLIGHT_LIMIT", "2")),
+        fail_on_suspicious_gpu_runtime=_env_flag(
+            "GENAI_FAIL_ON_SUSPICIOUS_GPU_RUNTIME",
+            default=True,
+        ),
         fetch_blocked_domains=_parse_csv_env(
             "GENAI_FETCH_BLOCKED_DOMAINS",
             default=(
