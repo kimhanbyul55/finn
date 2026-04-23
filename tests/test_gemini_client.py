@@ -14,9 +14,9 @@ def test_build_generate_content_url_uses_direct_gemini_rest_endpoint() -> None:
     assert (
         _build_generate_content_url(
             "https://generativelanguage.googleapis.com/v1beta",
-            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
         )
-        == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
     )
 
 
@@ -81,7 +81,7 @@ def test_gemini_generate_content_retries_once_after_short_429(monkeypatch) -> No
     )
 
     result = gemini_generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-flash-lite",
         system_prompt="system",
         user_prompt="user",
         request_label="test_retry",
@@ -126,7 +126,7 @@ def test_gemini_generate_content_does_not_sleep_on_long_rate_limit(monkeypatch) 
 
     try:
         gemini_generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-flash-lite",
             system_prompt="system",
             user_prompt="user",
             request_label="test_rate_limit",
@@ -172,7 +172,7 @@ def test_gemini_logs_include_news_context_and_token_usage(monkeypatch, caplog) -
         gemini_context="unit_test",
     ):
         result = gemini_generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-flash-lite",
             system_prompt="system",
             user_prompt="user",
             request_label="summary_generation",

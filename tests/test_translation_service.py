@@ -54,7 +54,7 @@ def test_build_localized_content_uses_Gemini_when_api_key_present(monkeypatch) -
     _cached_translation_repair_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
-    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash-lite")
 
     class _Response:
         def raise_for_status(self) -> None:
@@ -149,7 +149,7 @@ def test_build_localized_content_reuses_cached_Gemini_translations(monkeypatch) 
     _cached_translation_repair_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
-    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash-lite")
 
     calls = {"count": 0}
     class _Response:
@@ -204,7 +204,7 @@ def test_build_localized_content_skips_already_korean_summary_lines(monkeypatch)
     _cached_translation_repair_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
-    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash-lite")
 
     captured_payloads: list[str] = []
 
@@ -253,7 +253,7 @@ def test_build_localized_content_repairs_mixed_language_translation(monkeypatch)
     _cached_translation_repair_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
-    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash-lite")
     monkeypatch.setenv("GENAI_ENABLE_GEMINI_TRANSLATION_REPAIR", "true")
 
     calls = {"count": 0}
