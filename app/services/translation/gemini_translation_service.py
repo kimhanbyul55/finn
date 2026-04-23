@@ -27,6 +27,11 @@ _NUMBER_PATTERN = re.compile(
 _HANGUL_PATTERN = re.compile(r"[가-힣]")
 _LETTER_PATTERN = re.compile(r"[A-Za-z가-힣]")
 _DISALLOWED_TRANSLATION_SCRIPT_PATTERN = re.compile(r"[\u0900-\u097F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF]")
+_MASK_PLACEHOLDER_INDEX_PATTERN = re.compile(r"ZXQKEEP(\d+)ZXQ")
+_MASK_PLACEHOLDER_LOOSE_PATTERN = re.compile(
+    r"z\s*x\s*q\s*keep\s*(\d+)\s*z\s*x\s*q",
+    re.IGNORECASE,
+)
 
 _SENTIMENT_LABELS_KO = {
     SentimentLabel.BULLISH: "강세",
@@ -89,16 +94,16 @@ def build_localized_content(
         logger.warning("Gemini translation produced empty title; localized payload will be empty.")
         return None
 
-    translated_summary = [
-        SummaryLine(
-            line_number=line.line_number,
-            text=translations[f"summary_{line.line_number}"],
-        )
-        for line in summary_3lines
-    ]
-    if translated_summary and not all(line.text.strip() for line in translated_summary):
-        logger.warning("Gemini translation produced unusable summary lines; localized payload will be empty.")
-        return None
+    translated_summary: list[SummaryLine] = []
+    for line in summary_3lines:
+        translated_text = translations.get(f"summary_{line.line_number}", "").strip()
+        if translated_text:
+            translated_summary.append(
+                SummaryLine(
+                    line_number=line.line_number,
+                    text=translated_text,
+                )
+            )
 
     translated_xai = _translate_xai_payload(limited_xai, translations=translations)
 
@@ -348,7 +353,23 @@ def _unmask_text(text: str, replacements: dict[str, str]) -> str:
     unmasked = text
     for placeholder, token in replacements.items():
         unmasked = unmasked.replace(placeholder, token)
+    index_to_token = _build_mask_index_token_map(replacements)
+    if index_to_token:
+        unmasked = _MASK_PLACEHOLDER_LOOSE_PATTERN.sub(
+            lambda match: index_to_token.get(match.group(1), match.group(0)),
+            unmasked,
+        )
     return unmasked
+
+
+def _build_mask_index_token_map(replacements: dict[str, str]) -> dict[str, str]:
+    index_to_token: dict[str, str] = {}
+    for placeholder, token in replacements.items():
+        match = _MASK_PLACEHOLDER_INDEX_PATTERN.fullmatch(placeholder)
+        if match is None:
+            continue
+        index_to_token[match.group(1)] = token
+    return index_to_token
 
 
 @lru_cache(maxsize=256)

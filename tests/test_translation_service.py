@@ -5,6 +5,7 @@ from app.schemas.enrichment import SentimentLabel
 from app.services.translation.gemini_translation_service import _cached_translation_batch_completion
 from app.services.translation.gemini_translation_service import _cached_translation_repair_completion
 from app.services.translation.gemini_translation_service import _polish_korean_financial_text
+from app.services.translation.gemini_translation_service import _unmask_text
 from app.services.translation.gemini_translation_service import build_localized_content
 
 
@@ -282,3 +283,60 @@ def test_polish_korean_financial_text_normalizes_literal_finance_phrases() -> No
     )
 
     assert polished == "경영진은 올해 가이던스를 상향했다고 밝혔다. 운영 마진은 개선됐다."
+
+
+def test_unmask_text_restores_loose_placeholder_variants() -> None:
+    restored = _unmask_text(
+        "회사는 ZXQ KEEP 2 zXQ 주가 흐름을 설명했다.",
+        {"ZXQKEEP2ZXQ": "AAPL"},
+    )
+    assert restored == "회사는 AAPL 주가 흐름을 설명했다."
+
+
+def test_build_localized_content_keeps_partial_summary_when_some_lines_fail(monkeypatch) -> None:
+    _cached_translation_batch_completion.cache_clear()
+    _cached_translation_repair_completion.cache_clear()
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash-lite")
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": (
+                                "title|||애플이 가이던스를 상향했다\n"
+                                "summary_1|||매출은 12% 증가했다\n"
+                                "summary_2|||\n"
+                                "summary_3|||가이던스를 상향했다"
+                            )}]
+                        }
+                    }
+                ]
+            }
+
+    def _fake_post(*args, **kwargs):
+        return _Response()
+
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _fake_post)
+
+    localized = build_localized_content(
+        title="Apple raises guidance",
+        summary_3lines=[
+            SummaryLine(line_number=1, text="Revenue grew 12%."),
+            SummaryLine(line_number=2, text="Margins improved."),
+            SummaryLine(line_number=3, text="Guidance was raised."),
+        ],
+        xai=None,
+        sentiment_label=SentimentLabel.BULLISH,
+        tickers=["AAPL"],
+    )
+
+    assert localized is not None
+    assert localized.title == "애플이 가이던스를 상향했다"
+    assert [line.line_number for line in localized.summary_3lines] == [1, 3]
