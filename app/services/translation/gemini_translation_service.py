@@ -29,7 +29,7 @@ _LETTER_PATTERN = re.compile(r"[A-Za-z가-힣]")
 _DISALLOWED_TRANSLATION_SCRIPT_PATTERN = re.compile(r"[\u0900-\u097F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF]")
 _MASK_PLACEHOLDER_INDEX_PATTERN = re.compile(r"ZXQKEEP(\d+)ZXQ")
 _MASK_PLACEHOLDER_LOOSE_PATTERN = re.compile(
-    r"z\s*x\s*q\s*keep\s*(\d+)\s*z\s*x\s*q",
+    r"z\s*x\s*q\s*keep\s*(\d+)(?:\s*z\s*x\s*q)?",
     re.IGNORECASE,
 )
 
