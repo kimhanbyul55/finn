@@ -4,6 +4,7 @@ import argparse
 import time
 
 from app.core import get_settings
+from app.db import get_database_backend, ping_database_backend
 from app.core.logging import configure_logging, get_logger, log_event
 from app.services.job_processing_service import JobProcessingService
 
@@ -37,6 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     configure_logging()
+    _run_startup_checks()
     service = JobProcessingService()
     log_event(
         logger,
@@ -47,7 +49,18 @@ def main() -> None:
     )
 
     if args.once:
-        result = service.process_next_job()
+        try:
+            result = service.process_next_job()
+        except Exception as exc:
+            logger.exception("Worker one-shot execution failed.")
+            log_event(
+                logger,
+                40,
+                "worker_run_once_failed",
+                error=str(exc),
+            )
+            raise SystemExit(1) from exc
+
         log_event(
             logger,
             20,
@@ -62,7 +75,19 @@ def main() -> None:
 
     last_idle_log_at = 0.0
     while True:
-        result = service.process_next_job()
+        try:
+            result = service.process_next_job()
+        except Exception as exc:
+            logger.exception("Worker loop iteration failed.")
+            log_event(
+                logger,
+                40,
+                "worker_iteration_failed",
+                error=str(exc),
+            )
+            time.sleep(args.poll_interval)
+            continue
+
         if result.processed:
             event_name = "worker_retry_scheduled" if result.retry_scheduled else "worker_processed_job"
             log_event(
@@ -92,6 +117,53 @@ def main() -> None:
                 )
                 last_idle_log_at = now
         time.sleep(args.poll_interval)
+
+
+def _run_startup_checks() -> None:
+    settings = get_settings()
+    backend = get_database_backend()
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if backend in {"postgres", "postgresql"} and not settings.postgres_dsn:
+        errors.append("Postgres backend selected but GENAI_POSTGRES_DSN/DATABASE_URL is missing.")
+
+    db_ok, db_error = ping_database_backend()
+    if not db_ok:
+        errors.append(f"Database connectivity check failed: {db_error}")
+
+    if settings.enable_gemini_summary and not settings.gemini_api_key:
+        warnings.append(
+            "GEMINI_API_KEY is missing. Summarization will fall back to heuristic mode."
+        )
+
+    if warnings:
+        log_event(
+            logger,
+            30,
+            "worker_startup_warning",
+            backend=backend,
+            warnings=" | ".join(warnings),
+        )
+
+    if errors:
+        log_event(
+            logger,
+            40,
+            "worker_startup_failed",
+            backend=backend,
+            errors=" | ".join(errors),
+        )
+        raise SystemExit(1)
+
+    log_event(
+        logger,
+        20,
+        "worker_startup_check_passed",
+        backend=backend,
+        gemini_summary_enabled=settings.enable_gemini_summary,
+        gemini_translation_enabled=settings.enable_gemini_translation,
+    )
 
 
 if __name__ == "__main__":
