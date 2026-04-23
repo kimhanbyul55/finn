@@ -16,13 +16,24 @@ RUN apt-get update \
 
 # Install CPU-only PyTorch first. Zeabur runs this service on CPU, so CUDA/NVIDIA
 # wheels only make the image much larger without improving runtime performance.
+# Then install the local package without dependency resolution so pip does not
+# override torch with a CUDA-linked build from the default index.
 COPY pyproject.toml README.md ./
 COPY app ./app
 RUN python -m pip install --upgrade pip setuptools wheel \
-    && python -m pip install "torch>=2.3.0,<3.0.0" \
+    && python -m pip install "torch==2.6.0+cpu" \
         --index-url https://download.pytorch.org/whl/cpu \
         --extra-index-url https://pypi.org/simple \
-    && python -m pip install .
+    && python -m pip install --no-deps . \
+    && python -m pip install \
+        "fastapi>=0.115.0,<1.0.0" \
+        "lime>=0.2.0.1,<0.3.0" \
+        "numpy>=1.26.0,<3.0.0" \
+        "uvicorn[standard]>=0.30.0,<1.0.0" \
+        "pydantic>=2.8.0,<3.0.0" \
+        "psycopg[binary]>=3.2.0,<4.0.0" \
+        "requests>=2.32.0,<3.0.0" \
+        "transformers>=4.44.0,<5.0.0"
 
 # Create a non-root runtime user.
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \
