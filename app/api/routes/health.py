@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import Response
 
+from app.core.runtime_safety import get_runtime_safety_snapshot
 from app.db import get_database_backend, ping_database_backend
 
 
@@ -20,9 +21,15 @@ async def health_check_head() -> Response:
 @router.get("/health/deep", summary="Deep health check")
 async def deep_health_check() -> dict[str, str | bool | None]:
     database_ok, database_error = ping_database_backend()
+    runtime = get_runtime_safety_snapshot()
     return {
         "status": "ok" if database_ok else "degraded",
         "database_backend": get_database_backend(),
         "database_ok": database_ok,
         "database_error": database_error,
+        "runtime_torch_installed": bool(runtime["torch_installed"]),
+        "runtime_torch_cuda_version": runtime["torch_cuda_version"],
+        "runtime_torch_cuda_available": bool(runtime["torch_cuda_available"]),
+        "runtime_gpu_packages_detected": ",".join(runtime["gpu_packages_detected"]),
+        "runtime_suspicious_gpu_runtime": bool(runtime["suspicious_gpu_runtime"]),
     }

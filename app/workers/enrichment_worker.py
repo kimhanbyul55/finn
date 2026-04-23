@@ -6,6 +6,7 @@ import time
 from app.core import get_settings
 from app.db import get_database_backend, ping_database_backend
 from app.core.logging import configure_logging, get_logger, log_event
+from app.core.runtime_safety import get_runtime_safety_snapshot
 from app.services.job_processing_service import JobProcessingService
 
 
@@ -132,6 +133,12 @@ def _run_startup_checks() -> None:
     if not db_ok:
         errors.append(f"Database connectivity check failed: {db_error}")
 
+    runtime = get_runtime_safety_snapshot()
+    if runtime["suspicious_gpu_runtime"]:
+        warnings.append(
+            "GPU runtime artifacts detected in CPU-target service. Check Dockerfile/build path."
+        )
+
     if settings.enable_gemini_summary and not settings.gemini_api_key:
         warnings.append(
             "GEMINI_API_KEY is missing. Summarization/translation will remain empty."
@@ -162,6 +169,9 @@ def _run_startup_checks() -> None:
         "worker_startup_check_passed",
         backend=backend,
         gemini_summary_enabled=settings.enable_gemini_summary,
+        runtime_suspicious_gpu_runtime=bool(runtime["suspicious_gpu_runtime"]),
+        runtime_torch_cuda_version=runtime["torch_cuda_version"],
+        runtime_torch_cuda_available=bool(runtime["torch_cuda_available"]),
     )
 
 
