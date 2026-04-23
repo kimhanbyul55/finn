@@ -2,15 +2,13 @@ from __future__ import annotations
 
 from app.schemas.enrichment import SummaryLine, XAIHighlightItem, XAIPayload
 from app.schemas.enrichment import SentimentLabel
-from app.services.translation.deepl_service import _cached_translation_completion
 from app.services.translation.deepl_service import _cached_translation_batch_completion
 from app.services.translation.deepl_service import _cached_translation_repair_completion
 from app.services.translation.deepl_service import _polish_korean_financial_text
 from app.services.translation.deepl_service import build_localized_content
 
 
-def test_build_localized_content_falls_back_without_api_key(monkeypatch) -> None:
-    _cached_translation_completion.cache_clear()
+def test_build_localized_content_returns_none_without_api_key(monkeypatch) -> None:
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -39,17 +37,10 @@ def test_build_localized_content_falls_back_without_api_key(monkeypatch) -> None
         tickers=["AAPL"],
     )
 
-    assert localized.language == "ko"
-    assert localized.title == "Apple raises guidance"
-    assert localized.summary_3lines[0].text == "Revenue grew 12%."
-    assert localized.xai is not None
-    assert localized.xai.highlights[0].excerpt == "Guidance was raised."
-    assert localized.sentiment_label == "강세"
-    assert localized.ticker_box_labels["revenue"] == "매출"
+    assert localized is None
 
 
 def test_build_localized_content_uses_Gemini_when_api_key_present(monkeypatch) -> None:
-    _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
@@ -114,8 +105,7 @@ def test_build_localized_content_uses_Gemini_when_api_key_present(monkeypatch) -
     assert localized.xai.highlights[0].excerpt == "가이던스가 상향되었습니다."
 
 
-def test_build_localized_content_can_disable_Gemini_for_response_fallback(monkeypatch) -> None:
-    _cached_translation_completion.cache_clear()
+def test_build_localized_content_returns_none_when_gemini_is_disabled(monkeypatch) -> None:
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
@@ -138,13 +128,10 @@ def test_build_localized_content_can_disable_Gemini_for_response_fallback(monkey
         allow_gemini=False,
     )
 
-    assert localized.title == "Apple raises guidance"
-    assert localized.summary_3lines[0].text == "Revenue grew 12%."
-    assert localized.sentiment_label == "강세"
+    assert localized is None
 
 
 def test_build_localized_content_reuses_cached_Gemini_translations(monkeypatch) -> None:
-    _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
@@ -199,7 +186,6 @@ def test_build_localized_content_reuses_cached_Gemini_translations(monkeypatch) 
 
 
 def test_build_localized_content_skips_already_korean_summary_lines(monkeypatch) -> None:
-    _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
@@ -248,7 +234,6 @@ def test_build_localized_content_skips_already_korean_summary_lines(monkeypatch)
 
 
 def test_build_localized_content_repairs_mixed_language_translation(monkeypatch) -> None:
-    _cached_translation_completion.cache_clear()
     _cached_translation_batch_completion.cache_clear()
     _cached_translation_repair_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")

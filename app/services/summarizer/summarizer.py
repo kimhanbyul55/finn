@@ -379,22 +379,6 @@ def _select_distinct_candidates(candidates: list[_CandidateLine]) -> list[_Candi
     return sorted(selected, key=lambda item: item.position)
 
 
-def _build_fallback_lines(cleaned_text: str, existing_lines: list[str]) -> list[str]:
-    fallback_lines: list[str] = []
-    for sentence in _extract_sentences(cleaned_text):
-        candidate = _truncate_for_card(sentence)
-        if not candidate:
-            continue
-        if candidate in existing_lines or candidate in fallback_lines:
-            continue
-        if _is_too_similar_to_any(candidate, existing_lines + fallback_lines):
-            continue
-        fallback_lines.append(candidate)
-        if len(existing_lines) + len(fallback_lines) >= SUMMARY_LINE_COUNT:
-            break
-    return fallback_lines
-
-
 def _tokenize(text: str) -> set[str]:
     tokens = {match.group(0).lower() for match in _TOKEN_PATTERN.finditer(text)}
     return {token for token in tokens if token not in _STOPWORDS}

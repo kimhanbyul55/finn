@@ -71,7 +71,7 @@ def build_localized_content(
     tickers: list[str] | None = None,
     xai_highlight_limit: int | None = None,
     allow_gemini: bool = True,
-) -> LocalizedArticleContent:
+) -> LocalizedArticleContent | None:
     limited_xai = _limit_xai_payload(xai, highlight_limit=xai_highlight_limit)
     translations = _translate_localized_payload(
         title=title,
@@ -80,7 +80,15 @@ def build_localized_content(
         tickers=tickers,
         allow_gemini=allow_gemini,
     )
+    if translations is None:
+        logger.warning("Gemini translation unavailable; localized payload will be empty.")
+        return None
+
     translated_title = translations["title"]
+    if not translated_title.strip():
+        logger.warning("Gemini translation produced empty title; localized payload will be empty.")
+        return None
+
     translated_summary = [
         SummaryLine(
             line_number=line.line_number,
@@ -88,6 +96,10 @@ def build_localized_content(
         )
         for line in summary_3lines
     ]
+    if translated_summary and not all(line.text.strip() for line in translated_summary):
+        logger.warning("Gemini translation produced unusable summary lines; localized payload will be empty.")
+        return None
+
     translated_xai = _translate_xai_payload(limited_xai, translations=translations)
 
     return LocalizedArticleContent(
@@ -117,21 +129,31 @@ def _translate_xai_payload(payload: XAIPayload | None, *, translations: dict[str
     if payload is None:
         return None
 
-    return XAIPayload(
-        explanation=translations["xai_explanation"],
-        highlights=[
+    explanation = translations.get("xai_explanation", "").strip()
+    if not explanation:
+        return None
+
+    translated_highlights: list[XAIHighlightItem] = []
+    for index, item in enumerate(payload.highlights):
+        excerpt = translations.get(f"xai_highlight_{index + 1}", "").strip()
+        if not excerpt:
+            return None
+        detail_key = f"xai_detail_{index + 1}"
+        detail_value = translations.get(detail_key, "").strip()
+        translated_highlights.append(
             XAIHighlightItem(
-                excerpt=translations[f"xai_highlight_{index + 1}"],
+                excerpt=excerpt,
                 relevance_score=item.relevance_score,
-                explanation=(
-                    translations.get(f"xai_detail_{index + 1}") if item.explanation else None
-                ),
+                explanation=(detail_value if item.explanation and detail_value else None),
                 sentiment_signal=item.sentiment_signal,
                 start_char=item.start_char,
                 end_char=item.end_char,
             )
-            for index, item in enumerate(payload.highlights)
-        ],
+        )
+
+    return XAIPayload(
+        explanation=explanation,
+        highlights=translated_highlights,
     )
 
 
@@ -142,17 +164,16 @@ def _translate_localized_payload(
     xai: XAIPayload | None,
     tickers: list[str] | None,
     allow_gemini: bool,
-) -> dict[str, str]:
+) -> dict[str, str] | None:
     tasks = _build_translation_tasks(title=title, summary_3lines=summary_3lines, xai=xai)
-    original_values = {task.key: task.text.strip() for task in tasks}
     if not allow_gemini or not gemini_is_enabled():
-        return original_values
+        return None
 
     try:
         return _translate_tasks(tasks, tickers=tickers)
     except Exception:
-        logger.exception("Gemini translation failed; falling back to source text.")
-        return original_values
+        logger.exception("Gemini translation failed.")
+        return None
 
 
 def _build_translation_tasks(
@@ -180,7 +201,7 @@ def _translate_tasks(
     *,
     tickers: list[str] | None,
 ) -> dict[str, str]:
-    results = {task.key: task.text.strip() for task in tasks}
+    results = {task.key: "" for task in tasks}
     prepared_tasks = [
         _TranslationTask(
             key=task.key,
@@ -189,6 +210,11 @@ def _translate_tasks(
         for task in tasks
         if task.text.strip() and not _looks_already_korean(task.text)
     ]
+    for task in tasks:
+        original = task.text.strip()
+        if original and _looks_already_korean(original):
+            results[task.key] = original
+
     if not prepared_tasks:
         return results
 
@@ -205,8 +231,7 @@ def _translate_tasks(
     invalid_tasks: list[_TranslationTask] = []
 
     for task in prepared_tasks:
-        original = task.text.strip()
-        translated_text = parsed.get(task.key) or original
+        translated_text = parsed.get(task.key, "")
         polished = _polish_korean_financial_text(translated_text)
         if _is_usable_korean_translation(polished):
             results[task.key] = polished
@@ -279,56 +304,23 @@ def _repair_invalid_translations(
             "translate_localized_payload_repair",
         )
     except Exception:
-        logger.exception("Gemini translation repair failed; falling back to source text.")
-        return {task.key: task.text.strip() for task in tasks}
+        logger.exception("Gemini translation repair failed.")
+        return {}
 
     unmasked = _unmask_text(translated, masked.replacements)
     parsed = _parse_translation_batch_output(unmasked, tasks)
     repaired: dict[str, str] = {}
     for task in tasks:
-        original = task.text.strip()
-        translated_text = parsed.get(task.key) or original
+        translated_text = parsed.get(task.key, "")
         polished = _polish_korean_financial_text(translated_text)
         if _is_usable_korean_translation(polished):
             repaired[task.key] = polished
         else:
             logger.warning(
-                "Gemini translation failed Korean validation; falling back to source text.",
+                "Gemini translation failed Korean validation.",
                 extra={"translation_key": task.key},
             )
-            repaired[task.key] = original
     return repaired
-
-
-def _translate_with_fallback(
-    text: str,
-    *,
-    tickers: list[str] | None,
-    request_label: str,
-) -> str:
-    normalized = text.strip()
-    if not normalized:
-        return normalized
-    if not gemini_is_enabled():
-        return normalized
-    try:
-        return _translate_text(normalized, tickers=tickers, request_label=request_label)
-    except Exception:
-        logger.exception("Gemini translation failed; falling back to source text.")
-        return normalized
-
-
-def _translate_text(text: str, *, tickers: list[str] | None, request_label: str) -> str:
-    settings = get_settings()
-    prepared = _prepare_translation_input(text, char_limit=settings.gemini_translation_char_limit)
-    masked = _mask_text(prepared, tickers=tickers)
-    translated = _cached_translation_completion(
-        settings.gemini_api_base_url,
-        settings.gemini_translation_model,
-        masked.text,
-        request_label,
-    )
-    return _polish_korean_financial_text(_unmask_text(translated, masked.replacements))
 
 
 def _mask_text(text: str, *, tickers: list[str] | None) -> _MaskedText:
@@ -357,27 +349,6 @@ def _unmask_text(text: str, replacements: dict[str, str]) -> str:
     for placeholder, token in replacements.items():
         unmasked = unmasked.replace(placeholder, token)
     return unmasked
-
-
-@lru_cache(maxsize=512)
-def _cached_translation_completion(base_url: str, model: str, masked_text: str, request_label: str) -> str:
-    del base_url
-    return gemini_generate_content(
-        model=model,
-        system_prompt=(
-            "You are a Korean financial news translator. "
-            "Translate the input into natural Korean financial news style. "
-            "Return Korean only. Do not use Hindi, Chinese, Japanese, or any non-Korean language. "
-            "Use concise declarative 기사체 and avoid literal translation. "
-            "Prefer established financial terminology such as '가이던스', '전년 대비', and '경영진' when appropriate. "
-            "Keep placeholders unchanged. "
-            "Keep numbers, percentages, dates, currencies, ticker symbols, and finance abbreviations exactly as written. "
-            "Do not add commentary, quotation marks, bullets, or explanations."
-        ),
-        user_prompt=masked_text,
-        temperature=0.0,
-        request_label=request_label,
-    )
 
 
 @lru_cache(maxsize=256)

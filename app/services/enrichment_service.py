@@ -137,7 +137,7 @@ def build_api_enrichment_response(
     with gemini_log_context(
         news_id=payload.news_id,
         link=str(payload.link),
-        gemini_context="api_response_localized_fallback",
+        gemini_context="api_response_localized",
     ):
         localized = payload.localized or build_localized_content(
             title=payload.title,
@@ -146,7 +146,7 @@ def build_api_enrichment_response(
             sentiment_label=api_sentiment.label if api_sentiment is not None else None,
             tickers=getattr(payload, "ticker", None),
             xai_highlight_limit=settings.localized_xai_highlight_limit,
-            allow_gemini=False,
+            allow_gemini=True,
         )
 
     return ArticleEnrichmentResponse(

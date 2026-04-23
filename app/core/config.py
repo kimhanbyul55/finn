@@ -106,12 +106,8 @@ def get_settings() -> AppSettings:
             "GENAI_ENABLE_GEMINI_TRANSLATION_REPAIR",
             default=False,
         ),
-        gemini_summary_model=(
-            os.getenv("GEMINI_SUMMARY_MODEL") or "gemini-2.5-flash-lite"
-        ).strip(),
-        gemini_translation_model=(
-            os.getenv("GEMINI_TRANSLATION_MODEL") or "gemini-2.5-flash-lite"
-        ).strip(),
+        gemini_summary_model="gemini-2.5-flash-lite",
+        gemini_translation_model="gemini-2.5-flash-lite",
         gemini_timeout_seconds=float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20")),
         gemini_retry_after_max_seconds=float(os.getenv("GEMINI_RETRY_AFTER_MAX_SECONDS", "0")),
         gemini_summary_soft_char_limit=int(os.getenv("GEMINI_SUMMARY_SOFT_CHAR_LIMIT", "3500")),

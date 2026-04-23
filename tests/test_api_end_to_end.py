@@ -259,8 +259,7 @@ def test_news_intake_worker_and_status_flow(monkeypatch) -> None:
     )
     assert result_payload["result"]["xai_display"]["evidence"][0]["keywords"] == []
     assert result_payload["result"]["xai_display"]["evidence"][0]["sentiment_signal"] == "bullish"
-    assert result_payload["result"]["localized"]["title"] == "Company beats earnings estimates"
-    assert result_payload["result"]["localized"]["sentiment_label"] == "강세"
+    assert result_payload["result"]["localized"] is None
     assert result_payload["result"]["xai"]["highlights"][0]["excerpt"] == (
         "Revenue growth stayed ahead of expectations."
     )
@@ -498,7 +497,7 @@ def test_enrich_endpoint_returns_immediate_result(monkeypatch) -> None:
     assert body["status"] == "completed"
     assert body["outcome"] == "success"
     assert len(body["summary_3lines"]) == 3
-    assert body["localized"]["sentiment_label"] == "강세"
+    assert body["localized"] is None
 
 
 def test_enrich_endpoint_accepts_text_alias_and_returns_direct_text_result(monkeypatch) -> None:
@@ -833,7 +832,7 @@ def test_enrich_text_endpoint_returns_immediate_direct_text_result(monkeypatch) 
     body = response.json()
     assert body["news_id"] == "direct-text-news-1"
     assert body["status"] == "completed"
-    assert body["localized"]["title"] == "Company beats earnings estimates"
+    assert body["localized"] is None
 
 
 def test_direct_enrichment_can_wait_on_worker_backed_flow(monkeypatch) -> None:
