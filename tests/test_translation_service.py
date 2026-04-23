@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from app.schemas.enrichment import SummaryLine, XAIHighlightItem, XAIPayload
 from app.schemas.enrichment import SentimentLabel
-from app.services.translation.deepl_service import _cached_translation_batch_completion
-from app.services.translation.deepl_service import _cached_translation_repair_completion
-from app.services.translation.deepl_service import _polish_korean_financial_text
-from app.services.translation.deepl_service import build_localized_content
+from app.services.translation.gemini_translation_service import _cached_translation_batch_completion
+from app.services.translation.gemini_translation_service import _cached_translation_repair_completion
+from app.services.translation.gemini_translation_service import _polish_korean_financial_text
+from app.services.translation.gemini_translation_service import build_localized_content
 
 
 def test_build_localized_content_returns_none_without_api_key(monkeypatch) -> None:

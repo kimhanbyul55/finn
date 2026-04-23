@@ -28,10 +28,6 @@ class AppSettings:
     direct_enrichment_poll_interval_seconds: float
     basic_auth_user: str | None
     basic_auth_password: str | None
-    deepl_api_key: str | None
-    deepl_api_base_url: str
-    deepl_target_lang: str
-    deepl_timeout_seconds: float
     gemini_api_key: str | None
     gemini_api_base_url: str
     enable_gemini_summary: bool
@@ -89,12 +85,6 @@ def get_settings() -> AppSettings:
         ),
         basic_auth_user=os.getenv("BASIC_AUTH_USER"),
         basic_auth_password=os.getenv("BASIC_AUTH_PASSWORD"),
-        deepl_api_key=os.getenv("DEEPL_API_KEY"),
-        deepl_api_base_url=(
-            os.getenv("DEEPL_API_BASE_URL") or "https://api-free.deepl.com"
-        ).rstrip("/"),
-        deepl_target_lang=(os.getenv("DEEPL_TARGET_LANG") or "KO").strip().upper(),
-        deepl_timeout_seconds=float(os.getenv("DEEPL_TIMEOUT_SECONDS", "8")),
         gemini_api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
         gemini_api_base_url=(
             os.getenv("GEMINI_API_BASE_URL") or "https://generativelanguage.googleapis.com/v1beta"

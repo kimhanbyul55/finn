@@ -241,12 +241,14 @@ scripts/supabase_lockdown_genai_tables.sql
   - 직접 분석 API를 worker-backed 방식으로 처리할지 여부
 - `GENAI_DIRECT_ENRICHMENT_WAIT_TIMEOUT`
   - 직접 분석 요청 대기 timeout
-- `DEEPL_API_KEY`
-  - 설정 시 제목, 3줄 요약, XAI 하이라이트의 UI용 한글 번역을 활성화
-- `DEEPL_API_BASE_URL`
-  - DeepL Free는 `https://api-free.deepl.com`
-- `DEEPL_TARGET_LANG`
-  - 기본값 `KO`
+- `GEMINI_API_KEY` (또는 `GOOGLE_API_KEY`)
+  - 제목, 3줄 요약, XAI 하이라이트의 UI용 한글 생성/번역에 사용
+- `GEMINI_API_BASE_URL`
+  - 기본값 `https://generativelanguage.googleapis.com/v1beta`
+- `GENAI_ENABLE_GEMINI_SUMMARY`
+  - 3줄 요약 Gemini 활성화 여부
+- `GENAI_ENABLE_GEMINI_TRANSLATION_REPAIR`
+  - 번역 결과가 한국어 검증 실패 시 2차 복구 호출 사용 여부
 - `GENAI_DIRECT_ENRICHMENT_POLL_INTERVAL`
   - 직접 분석 요청 대기 polling 간격
 - `BASIC_AUTH_USER`
