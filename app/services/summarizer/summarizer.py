@@ -15,7 +15,6 @@ MIN_SENTENCE_CHARACTERS = 24
 
 _SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+|\n+")
 _GENERATED_LINE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+")
-_NUMERIC_TOKEN_PATTERN = re.compile(r"\$?\d[\d,]*(?:\.\d+)?%?")
 _MULTI_SPACE_PATTERN = re.compile(r"\s+")
 _GENERIC_PREFIX_PATTERN = re.compile(
     r"^(?:the article|the report|this article|in the article)\s+(?:says|reports|notes|highlights)\s+that\s+",
@@ -63,9 +62,6 @@ def _summarize_with_gemini(*, title: str, article_text: str) -> list[str] | None
     if len(lines) != SUMMARY_LINE_COUNT or not all(line.strip() for line in lines):
         logger.warning("Gemini summary generation returned unusable output.")
         return None
-    if not _summary_preserves_numeric_facts(lines, title=title, article_text=article_text):
-        logger.warning("Gemini summary generation introduced unsupported numeric facts.")
-        return None
     return lines
 
 
@@ -98,36 +94,6 @@ def _split_generated_line(line: str) -> list[str]:
 
 def _normalize_generated_line(line: str) -> str:
     return _normalize_text(line).removesuffix("...").strip()
-
-
-def _summary_preserves_numeric_facts(lines: list[str], *, title: str, article_text: str) -> bool:
-    source_numeric_tokens = _extract_numeric_tokens(f"{title} {article_text}")
-    if not source_numeric_tokens:
-        return True
-
-    summary_numeric_tokens = _extract_numeric_tokens(" ".join(lines))
-    return summary_numeric_tokens.issubset(source_numeric_tokens)
-
-
-def _extract_numeric_tokens(text: str) -> set[str]:
-    return {_normalize_numeric_token(match.group(0)) for match in _NUMERIC_TOKEN_PATTERN.finditer(text)}
-
-
-def _normalize_numeric_token(token: str) -> str:
-    normalized = token.strip().replace(",", "")
-    if normalized.startswith("$"):
-        return f"${_normalize_plain_number(normalized[1:])}"
-    return _normalize_plain_number(normalized)
-
-
-def _normalize_plain_number(text: str) -> str:
-    suffix = ""
-    if text.endswith("%"):
-        suffix = "%"
-        text = text[:-1]
-    if "." in text and text.replace(".", "", 1).isdigit():
-        text = text.rstrip("0").rstrip(".")
-    return f"{text}{suffix}"
 
 
 @lru_cache(maxsize=256)

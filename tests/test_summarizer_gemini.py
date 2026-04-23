@@ -95,7 +95,7 @@ def test_summarizer_splits_single_line_Gemini_output_into_three_sentences(monkey
     ]
 
 
-def test_summarizer_rejects_Gemini_output_with_invented_numbers(monkeypatch) -> None:
+def test_summarizer_accepts_Gemini_output_even_when_numbers_differ(monkeypatch) -> None:
     _cached_summary_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-2.5-flash-lite")
@@ -133,7 +133,11 @@ def test_summarizer_rejects_Gemini_output_with_invented_numbers(monkeypatch) -> 
         ),
     )
 
-    assert summary == ["", "", ""]
+    assert summary == [
+        "매출은 전년 대비 12% 증가했다.",
+        "영업 마진은 개선됐다.",
+        "매출은 강한 수요로 전년 대비 15% 증가했다.",
+    ]
 
 
 def test_summarizer_skips_Gemini_for_oversized_articles(monkeypatch) -> None:
