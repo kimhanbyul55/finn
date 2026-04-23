@@ -33,7 +33,12 @@ RUN python -m pip install --upgrade pip setuptools wheel \
         "pydantic>=2.8.0,<3.0.0" \
         "psycopg[binary]>=3.2.0,<4.0.0" \
         "requests>=2.32.0,<3.0.0" \
-        "transformers>=4.44.0,<5.0.0"
+        "transformers>=4.44.0,<5.0.0" \
+    && if python -m pip list --format=freeze | grep -E '^(nvidia-|triton==)' >/dev/null; then \
+        echo "ERROR: Unexpected GPU packages installed in CPU build image."; \
+        python -m pip list --format=freeze | grep -E '^(nvidia-|triton==)'; \
+        exit 1; \
+    fi
 
 # Create a non-root runtime user.
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \
