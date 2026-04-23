@@ -362,6 +362,29 @@ class InternalStageStatus(SchemaModel):
     )
 
 
+class StageIOMetric(SchemaModel):
+    stage: StageName = Field(..., description="Pipeline stage name.")
+    input_chars: int | None = Field(
+        default=None,
+        ge=0,
+        description="Approximate input character count consumed by the stage.",
+    )
+    output_chars: int | None = Field(
+        default=None,
+        ge=0,
+        description="Approximate output character count produced by the stage.",
+    )
+    output_items: int | None = Field(
+        default=None,
+        ge=0,
+        description="Optional item count output (for example summary lines or highlights).",
+    )
+    note: str | None = Field(
+        default=None,
+        description="Optional stage-specific diagnostic note.",
+    )
+
+
 class ArticleEnrichmentResponse(SchemaModel):
     news_id: str = Field(..., description="Unique news identifier.")
     title: str = Field(..., description="Original article title.")
@@ -400,6 +423,15 @@ class ArticleEnrichmentResponse(SchemaModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="When analysis was completed or last updated.",
     )
+    cleaned_text_char_count: int = Field(
+        default=0,
+        ge=0,
+        description="Character count of cleaned article text.",
+    )
+    cleaned_text_preview: str | None = Field(
+        default=None,
+        description="Trimmed preview of cleaned article text for debugging.",
+    )
     error: ErrorDetail | None = Field(
         default=None,
         description="Top-level pipeline error, if any.",
@@ -407,6 +439,10 @@ class ArticleEnrichmentResponse(SchemaModel):
     stage_statuses: list[InternalStageStatus] = Field(
         default_factory=list,
         description="Optional internal execution status per pipeline stage.",
+    )
+    stage_io_metrics: list[StageIOMetric] = Field(
+        default_factory=list,
+        description="Per-stage input/output volume diagnostics.",
     )
 
     @field_validator("summary_3lines", mode="before")

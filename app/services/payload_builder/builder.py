@@ -21,6 +21,7 @@ from app.schemas.storage import (
     AnalysisOutcome,
     AnalysisStatus,
     EnrichmentStoragePayload,
+    StageIOMetric,
     PipelineStageName,
     PipelineStageResult,
     StoragePayloadError,
@@ -54,6 +55,7 @@ def build_enrichment_storage_payload(
     errors: list[StoragePayloadError] | None = None,
 ) -> EnrichmentStoragePayload:
     """Assemble a database-ready storage payload from enrichment stage outputs."""
+    cleaned_text_normalized = (cleaned_text or "").strip()
     normalized_summary = _normalize_summary_lines(summary_3lines)
     stored_sentiment = (
         build_stored_sentiment_payload(sentiment_result)
@@ -98,9 +100,19 @@ def build_enrichment_storage_payload(
         analysis_status=analysis_status,
         analysis_outcome=analysis_outcome,
         analyzed_at=_normalize_timestamp(analyzed_at),
-        cleaned_text_available=bool((cleaned_text or "").strip()),
+        cleaned_text_char_count=len(cleaned_text_normalized),
+        cleaned_text_preview=_build_cleaned_text_preview(cleaned_text_normalized),
+        cleaned_text_available=bool(cleaned_text_normalized),
         fetch_result=fetch_result,
         stage_statuses=stage_statuses,
+        stage_io_metrics=_build_stage_io_metrics(
+            fetch_result=fetch_result,
+            cleaned_text=cleaned_text_normalized,
+            normalized_summary=normalized_summary,
+            sentiment_available=stored_sentiment is not None,
+            xai_result=xai_result,
+            localized=localized,
+        ),
         errors=aggregated_errors,
     )
 
@@ -109,6 +121,13 @@ def _normalize_summary_lines(summary_3lines: list[str] | None) -> list[str]:
     if not summary_3lines:
         return []
     return [line.strip() for line in summary_3lines if line and line.strip()][:3]
+
+
+def _build_cleaned_text_preview(cleaned_text: str) -> str | None:
+    if not cleaned_text:
+        return None
+    preview_limit = 1200
+    return cleaned_text[:preview_limit]
 
 
 def _build_stored_localized_content(
@@ -269,3 +288,76 @@ def _log_localization_status(
             len(localized.summary_3lines) if localized is not None else 0
         ),
     )
+
+
+def _build_stage_io_metrics(
+    *,
+    fetch_result: ArticleFetchResult | None,
+    cleaned_text: str,
+    normalized_summary: list[str],
+    sentiment_available: bool,
+    xai_result: XAIResult | None,
+    localized: LocalizedArticleContent | None,
+) -> list[StageIOMetric]:
+    fetch_input_chars = len(fetch_result.raw_text or "") if fetch_result is not None else None
+    clean_input_chars = (
+        len((fetch_result.raw_text or fetch_result.cleaned_text or ""))
+        if fetch_result is not None
+        else None
+    )
+    summary_chars = sum(len(line) for line in normalized_summary)
+
+    metrics: list[StageIOMetric] = [
+        StageIOMetric(
+            stage=PipelineStageName.FETCH,
+            input_chars=fetch_input_chars,
+            output_chars=fetch_input_chars,
+            output_items=None,
+            note="Uses provided article_text/summary_text when supplied.",
+        ),
+        StageIOMetric(
+            stage=PipelineStageName.CLEAN,
+            input_chars=clean_input_chars,
+            output_chars=len(cleaned_text) if cleaned_text else 0,
+            output_items=None,
+            note=None,
+        ),
+        StageIOMetric(
+            stage=PipelineStageName.VALIDATE,
+            input_chars=len(cleaned_text) if cleaned_text else 0,
+            output_chars=len(cleaned_text) if cleaned_text else 0,
+            output_items=None,
+            note=None,
+        ),
+        StageIOMetric(
+            stage=PipelineStageName.SUMMARIZE,
+            input_chars=len(cleaned_text) if cleaned_text else 0,
+            output_chars=summary_chars,
+            output_items=len(normalized_summary),
+            note=None,
+        ),
+        StageIOMetric(
+            stage=PipelineStageName.SENTIMENT,
+            input_chars=len(cleaned_text) if cleaned_text else 0,
+            output_chars=None,
+            output_items=1 if sentiment_available else 0,
+            note=None,
+        ),
+        StageIOMetric(
+            stage=PipelineStageName.XAI,
+            input_chars=len(cleaned_text) if cleaned_text else 0,
+            output_chars=None,
+            output_items=len(xai_result.highlights) if xai_result is not None else 0,
+            note=None,
+        ),
+        StageIOMetric(
+            stage=PipelineStageName.BUILD_PAYLOAD,
+            input_chars=None,
+            output_chars=None,
+            output_items=(
+                len(localized.summary_3lines) if localized is not None else 0
+            ),
+            note="localized.summary_3lines count",
+        ),
+    ]
+    return metrics

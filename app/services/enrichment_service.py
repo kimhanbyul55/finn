@@ -15,6 +15,7 @@ from app.schemas.enrichment import (
     SentimentLabel,
     SentimentResult,
     StageName,
+    StageIOMetric,
     StageStatus,
     SummaryLine,
     XAIDisplayEvidenceItem,
@@ -148,8 +149,11 @@ def build_api_enrichment_response(
         status=_map_overall_status(payload.analysis_status, payload.analysis_outcome),
         outcome=payload.analysis_outcome.value,
         analyzed_at=payload.analyzed_at,
+        cleaned_text_char_count=payload.cleaned_text_char_count,
+        cleaned_text_preview=payload.cleaned_text_preview,
         error=_build_error_detail(payload),
         stage_statuses=[_map_stage_status(stage) for stage in payload.stage_statuses],
+        stage_io_metrics=[_map_stage_io_metric(item) for item in payload.stage_io_metrics],
     )
 
 
@@ -315,6 +319,28 @@ def _map_stage_status(stage: object) -> InternalStageStatus:
         started_at=getattr(stage, "started_at"),
         completed_at=getattr(stage, "completed_at"),
         error=None,
+    )
+
+
+def _map_stage_io_metric(item: object) -> StageIOMetric:
+    stage_name_map = {
+        "fetch": StageName.FETCH,
+        "clean": StageName.CLEAN,
+        "validate": StageName.VALIDATE,
+        "summarize": StageName.SUMMARY_GENERATION,
+        "sentiment": StageName.SENTIMENT_ANALYSIS,
+        "xai": StageName.XAI_EXTRACTION,
+        "mixed_detection": StageName.MIXED_SIGNAL_DETECTION,
+        "build_payload": StageName.BUILD_PAYLOAD,
+        "persist": StageName.PERSIST,
+    }
+    stage_value = getattr(item, "stage").value
+    return StageIOMetric(
+        stage=stage_name_map[stage_value],
+        input_chars=getattr(item, "input_chars", None),
+        output_chars=getattr(item, "output_chars", None),
+        output_items=getattr(item, "output_items", None),
+        note=getattr(item, "note", None),
     )
 
 

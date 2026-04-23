@@ -80,6 +80,29 @@ class PipelineStageResult(SchemaModel):
     )
 
 
+class StageIOMetric(SchemaModel):
+    stage: PipelineStageName = Field(..., description="Pipeline stage identifier.")
+    input_chars: int | None = Field(
+        default=None,
+        ge=0,
+        description="Approximate input character count consumed by the stage.",
+    )
+    output_chars: int | None = Field(
+        default=None,
+        ge=0,
+        description="Approximate output character count produced by the stage.",
+    )
+    output_items: int | None = Field(
+        default=None,
+        ge=0,
+        description="Optional item count output (for example summary lines or highlights).",
+    )
+    note: str | None = Field(
+        default=None,
+        description="Optional stage-specific diagnostic note.",
+    )
+
+
 class StoredSentimentPayload(SchemaModel):
     label: str = Field(..., description="Final sentiment label stored for the article.")
     score: float = Field(..., ge=-100.0, le=100.0)
@@ -136,6 +159,15 @@ class EnrichmentStoragePayload(SchemaModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp when this storage payload was assembled.",
     )
+    cleaned_text_char_count: int = Field(
+        default=0,
+        ge=0,
+        description="Character count of cleaned article text.",
+    )
+    cleaned_text_preview: str | None = Field(
+        default=None,
+        description="Trimmed preview of cleaned article text for debugging.",
+    )
     cleaned_text_available: bool = Field(
         default=False,
         description="Whether cleaned article text existed at build time.",
@@ -147,6 +179,10 @@ class EnrichmentStoragePayload(SchemaModel):
     stage_statuses: list[PipelineStageResult] = Field(
         default_factory=list,
         description="Per-stage execution details for debugging and observability.",
+    )
+    stage_io_metrics: list[StageIOMetric] = Field(
+        default_factory=list,
+        description="Per-stage input/output volume diagnostics.",
     )
     errors: list[StoragePayloadError] = Field(
         default_factory=list,
