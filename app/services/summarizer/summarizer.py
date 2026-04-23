@@ -120,16 +120,15 @@ def _cached_summary_completion(base_url: str, model: str, title: str, article_te
         model=model,
         system_prompt=(
             "You are a Korean financial news editor. "
-            "Rewrite the article into exactly 3 Korean summary lines. "
-            "Use neutral financial news style and declarative '-했다' sentences. "
-            "Write exactly one complete sentence per line. "
-            "Keep each line concise, natural, and self-contained. "
-            "Keep numbers, percentages, dates, currencies, ticker symbols, and factual details unchanged. "
-            "Never invent or infer missing details. "
+            "Produce exactly 3 Korean summary lines from the article. "
+            "Each line must be one complete sentence in neutral financial 기사체. "
+            "Use concise declarative endings such as '-했다' or '-밝혔다'. "
+            "Preserve numbers, percentages, dates, currencies, ticker symbols, and factual entities exactly. "
+            "Do not invent, infer, exaggerate, or add unstated causes. "
             "Do not repeat the title. "
-            "Do not use bullets, numbering, quotes, commentary, or ellipses. "
-            "Ignore tables, reconciliation labels, datelines, boilerplate, and footer text. "
-            "Prefer concrete business facts such as revenue, guidance, margins, demand, dividends, and outlook. "
+            "Do not output bullets, numbering, quotes, commentary, or metadata. "
+            "Ignore table captions, reconciliation headers, datelines, and footer boilerplate. "
+            "Prioritize concrete business facts such as 실적, 가이던스, 수요, 마진, 배당, 전망. "
             "Return only 3 plain Korean lines."
         ),
         user_prompt=f"Title: {title}\nArticle:\n{article_text}",
