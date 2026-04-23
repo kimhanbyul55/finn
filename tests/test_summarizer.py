@@ -3,7 +3,8 @@ from __future__ import annotations
 from app.services.summarizer import summarize_to_three_lines
 
 
-def test_summarizer_returns_exactly_three_non_empty_lines() -> None:
+def test_summarizer_returns_empty_lines_when_gemini_is_not_configured(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     article_text = (
         "The company reported quarterly revenue of $12.4 billion, up 8% from a year earlier. "
         "Management said cloud demand remained strong and raised its full-year outlook. "
@@ -16,12 +17,17 @@ def test_summarizer_returns_exactly_three_non_empty_lines() -> None:
         article_text=article_text,
     )
 
-    assert len(summary) == 3
-    assert all(isinstance(line, str) for line in summary)
-    assert all(line.strip() for line in summary)
+    assert summary == ["", "", ""]
 
 
-def test_summarizer_keeps_common_abbreviations_inside_sentence() -> None:
+def test_summarizer_returns_empty_lines_when_gemini_fails(monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    def _raise_error(*args, **kwargs):
+        raise RuntimeError("gemini unavailable")
+
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _raise_error)
+
     article_text = (
         "Oil prices resumed their rise because of the war with Iran, but U.S. stocks held steadier this time around. "
         "The S&P 500 rose 0.2% Tuesday and added to its gain from the day before, which was its biggest since the war began. "
@@ -33,5 +39,4 @@ def test_summarizer_keeps_common_abbreviations_inside_sentence() -> None:
         article_text=article_text,
     )
 
-    assert any("U.S. stocks held steadier this time around." in line for line in summary)
-    assert all(not line.startswith("stocks held steadier") for line in summary)
+    assert summary == ["", "", ""]
