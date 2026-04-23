@@ -110,7 +110,24 @@ def _summary_preserves_numeric_facts(lines: list[str], *, title: str, article_te
 
 
 def _extract_numeric_tokens(text: str) -> set[str]:
-    return {match.group(0) for match in _NUMERIC_TOKEN_PATTERN.finditer(text)}
+    return {_normalize_numeric_token(match.group(0)) for match in _NUMERIC_TOKEN_PATTERN.finditer(text)}
+
+
+def _normalize_numeric_token(token: str) -> str:
+    normalized = token.strip().replace(",", "")
+    if normalized.startswith("$"):
+        return f"${_normalize_plain_number(normalized[1:])}"
+    return _normalize_plain_number(normalized)
+
+
+def _normalize_plain_number(text: str) -> str:
+    suffix = ""
+    if text.endswith("%"):
+        suffix = "%"
+        text = text[:-1]
+    if "." in text and text.replace(".", "", 1).isdigit():
+        text = text.rstrip("0").rstrip(".")
+    return f"{text}{suffix}"
 
 
 @lru_cache(maxsize=256)

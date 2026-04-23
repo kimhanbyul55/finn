@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 
+from app.core.logging import log_event
 from app.schemas.article_fetch import ArticleFetchResult
 from app.schemas.enrichment import (
     LocalizedArticleContent,
@@ -19,6 +21,7 @@ from app.schemas.storage import (
     AnalysisOutcome,
     AnalysisStatus,
     EnrichmentStoragePayload,
+    PipelineStageName,
     PipelineStageResult,
     StoragePayloadError,
     build_stored_sentiment_payload,
@@ -27,6 +30,8 @@ from app.schemas.xai import XAIContributionDirection
 from app.schemas.xai import XAIResult
 from app.core import get_settings
 from app.services.translation import build_localized_content
+
+logger = logging.getLogger(__name__)
 
 
 def build_enrichment_storage_payload(
@@ -65,6 +70,21 @@ def build_enrichment_storage_payload(
         analysis_outcome=analysis_outcome,
     )
 
+    aggregated_errors = list(errors or [])
+    _append_payload_warnings(
+        errors=aggregated_errors,
+        analysis_outcome=analysis_outcome,
+        normalized_summary=normalized_summary,
+        localized=localized,
+        sentiment_available=stored_sentiment is not None,
+    )
+    _log_localization_status(
+        news_id=news_id,
+        analysis_outcome=analysis_outcome,
+        summary_line_count=len(normalized_summary),
+        localized=localized,
+    )
+
     return EnrichmentStoragePayload(
         news_id=news_id,
         title=title,
@@ -81,7 +101,7 @@ def build_enrichment_storage_payload(
         cleaned_text_available=bool((cleaned_text or "").strip()),
         fetch_result=fetch_result,
         stage_statuses=stage_statuses,
-        errors=list(errors or []),
+        errors=aggregated_errors,
     )
 
 
@@ -183,3 +203,69 @@ def _normalize_timestamp(value: datetime | None) -> datetime:
     if timestamp.tzinfo is None:
         return timestamp.replace(tzinfo=timezone.utc)
     return timestamp.astimezone(timezone.utc)
+
+
+def _append_payload_warnings(
+    *,
+    errors: list[StoragePayloadError],
+    analysis_outcome: AnalysisOutcome,
+    normalized_summary: list[str],
+    localized: LocalizedArticleContent | None,
+    sentiment_available: bool,
+) -> None:
+    if analysis_outcome == AnalysisOutcome.FILTERED:
+        return
+
+    if not normalized_summary:
+        errors.append(
+            StoragePayloadError(
+                stage=PipelineStageName.SUMMARIZE,
+                message="Summary generation returned no usable lines.",
+                fatal=False,
+            )
+        )
+    if localized is None:
+        errors.append(
+            StoragePayloadError(
+                stage=PipelineStageName.BUILD_PAYLOAD,
+                message="Localized Korean payload is empty.",
+                fatal=False,
+            )
+        )
+    elif not localized.summary_3lines and normalized_summary:
+        errors.append(
+            StoragePayloadError(
+                stage=PipelineStageName.BUILD_PAYLOAD,
+                message="Localized payload has title but no translated summary lines.",
+                fatal=False,
+            )
+        )
+    if not sentiment_available:
+        errors.append(
+            StoragePayloadError(
+                stage=PipelineStageName.SENTIMENT,
+                message="Sentiment result is missing.",
+                fatal=False,
+            )
+        )
+
+
+def _log_localization_status(
+    *,
+    news_id: str,
+    analysis_outcome: AnalysisOutcome,
+    summary_line_count: int,
+    localized: LocalizedArticleContent | None,
+) -> None:
+    log_event(
+        logger,
+        logging.INFO,
+        "payload_localization_status",
+        news_id=news_id,
+        analysis_outcome=analysis_outcome.value,
+        summary_line_count=summary_line_count,
+        localized_present=localized is not None,
+        localized_summary_line_count=(
+            len(localized.summary_3lines) if localized is not None else 0
+        ),
+    )

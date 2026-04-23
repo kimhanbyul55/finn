@@ -89,7 +89,7 @@ def build_localized_content(
         logger.warning("Gemini translation unavailable; localized payload will be empty.")
         return None
 
-    translated_title = translations["title"]
+    translated_title = translations.get("title", "").strip()
     if not translated_title.strip():
         logger.warning("Gemini translation produced empty title; localized payload will be empty.")
         return None
@@ -278,7 +278,12 @@ def _is_usable_korean_translation(text: str) -> bool:
         return False
     if _DISALLOWED_TRANSLATION_SCRIPT_PATTERN.search(normalized):
         return False
-    return _looks_already_korean(normalized)
+    letters = _LETTER_PATTERN.findall(normalized)
+    if not letters:
+        return False
+    hangul_count = len(_HANGUL_PATTERN.findall(normalized))
+    # Keep translations that are mostly Korean while still allowing finance terms and tickers.
+    return hangul_count / len(letters) >= 0.25
 
 
 def _mask_text(text: str, *, tickers: list[str] | None) -> _MaskedText:

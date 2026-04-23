@@ -18,6 +18,14 @@ _SEPARATOR_LINE_PATTERN = re.compile(r"^[\W_]{2,}$")
 _URL_ONLY_LINE_PATTERN = re.compile(r"^https?://\S+$", re.IGNORECASE)
 _SENTENCE_END_PATTERN = re.compile(r"[.!?](?:\s|$)")
 _ALPHA_TOKEN_PATTERN = re.compile(r"[A-Za-z]{3,}")
+_TRANSCRIPT_SPEAKER_PATTERN = re.compile(
+    r"^(?:[A-Z][A-Za-z.'-]{1,24}|Operator|Moderator|Unknown Speaker|Q|A)\s*:\s*",
+    re.IGNORECASE,
+)
+_TRANSCRIPT_CUE_PATTERN = re.compile(
+    r"^(?:question-and-answer session|q&a|prepared remarks|earnings call transcript|conference call)$",
+    re.IGNORECASE,
+)
 _BOILERPLATE_LINE_PATTERNS = [
     re.compile(r"^advertisement$", re.IGNORECASE),
     re.compile(r"^sponsored content$", re.IGNORECASE),
@@ -136,9 +144,23 @@ def _is_safe_boilerplate_line(line: str) -> bool:
         return True
     if _URL_ONLY_LINE_PATTERN.match(line):
         return True
+    if _TRANSCRIPT_CUE_PATTERN.match(line.strip()):
+        return True
+    if _looks_like_transcript_speaker_line(line):
+        return True
     if _looks_like_table_header(line):
         return True
     return any(pattern.match(line) for pattern in _BOILERPLATE_LINE_PATTERNS)
+
+
+def _looks_like_transcript_speaker_line(line: str) -> bool:
+    # Drop sparse call-transcript dialog labels that harm summary/translation quality.
+    if not _TRANSCRIPT_SPEAKER_PATTERN.match(line):
+        return False
+    content = _TRANSCRIPT_SPEAKER_PATTERN.sub("", line).strip()
+    if not content:
+        return True
+    return len(content) <= 90 and len(content.split()) <= 16
 
 
 def _looks_like_table_header(line: str) -> bool:
