@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ _MASK_PLACEHOLDER_LOOSE_PATTERN = re.compile(
     r"z\s*x\s*q\s*keep\s*(\d+)(?:\s*z\s*x\s*q)?",
     re.IGNORECASE,
 )
+_CODE_FENCE_PATTERN = re.compile(r"^```(?:json|text)?\s*|\s*```$", re.IGNORECASE)
 
 _SENTIMENT_LABELS_KO = {
     SentimentLabel.BULLISH: "강세",
@@ -90,6 +92,8 @@ def build_localized_content(
         return None
 
     translated_title = translations.get("title", "").strip()
+    if not translated_title and _looks_already_korean(title):
+        translated_title = title.strip()
     if not translated_title.strip():
         logger.warning("Gemini translation produced empty title; localized payload will be empty.")
         return None
@@ -238,6 +242,15 @@ def _translate_tasks(
         polished = _polish_korean_financial_text(translated_text)
         if _is_usable_korean_translation(polished):
             results[task.key] = polished
+    missing_keys = [task.key for task in prepared_tasks if not results.get(task.key, "").strip()]
+    if missing_keys:
+        logger.warning(
+            "Gemini translation left some fields empty after validation.",
+            extra={
+                "missing_keys": ",".join(missing_keys),
+                "prepared_task_count": len(prepared_tasks),
+            },
+        )
     return results
 
 
@@ -249,9 +262,18 @@ def _parse_translation_batch_output(
     output: str,
     tasks: list[_TranslationTask],
 ) -> dict[str, str]:
+    normalized_output = _strip_code_fence(output)
+    json_parsed = _parse_translation_json_output(normalized_output, tasks)
+    if json_parsed:
+        return json_parsed
+
+    span_parsed = _parse_translation_key_spans(normalized_output, tasks)
+    if span_parsed:
+        return span_parsed
+
     parsed: dict[str, str] = {}
     valid_keys = {task.key for task in tasks}
-    for raw_line in output.splitlines():
+    for raw_line in normalized_output.splitlines():
         line = raw_line.strip()
         if not line or "|||" not in line:
             continue
@@ -260,6 +282,53 @@ def _parse_translation_batch_output(
         normalized_text = text.strip()
         if normalized_key in valid_keys and normalized_text:
             parsed[normalized_key] = normalized_text
+    return parsed
+
+
+def _strip_code_fence(text: str) -> str:
+    return _CODE_FENCE_PATTERN.sub("", text.strip())
+
+
+def _parse_translation_json_output(
+    output: str,
+    tasks: list[_TranslationTask],
+) -> dict[str, str]:
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+
+    valid_keys = {task.key for task in tasks}
+    parsed: dict[str, str] = {}
+    for key, value in payload.items():
+        if key not in valid_keys or not isinstance(value, str):
+            continue
+        normalized = value.strip()
+        if normalized:
+            parsed[key] = normalized
+    return parsed
+
+
+def _parse_translation_key_spans(
+    output: str,
+    tasks: list[_TranslationTask],
+) -> dict[str, str]:
+    keys = [task.key for task in tasks]
+    if not keys:
+        return {}
+    key_group = "|".join(re.escape(key) for key in keys)
+    pattern = re.compile(
+        rf"(?P<key>{key_group})\s*\|\|\|\s*(?P<text>.*?)(?=(?:{key_group})\s*\|\|\||\Z)",
+        re.DOTALL,
+    )
+    parsed: dict[str, str] = {}
+    for match in pattern.finditer(output):
+        key = match.group("key").strip()
+        text = " ".join(match.group("text").strip().splitlines()).strip()
+        if text:
+            parsed[key] = text
     return parsed
 
 
@@ -276,14 +345,15 @@ def _is_usable_korean_translation(text: str) -> bool:
     normalized = text.strip()
     if not normalized:
         return False
-    if _DISALLOWED_TRANSLATION_SCRIPT_PATTERN.search(normalized):
+    disallowed_count = len(_DISALLOWED_TRANSLATION_SCRIPT_PATTERN.findall(normalized))
+    if disallowed_count > 0 and (disallowed_count / max(1, len(normalized))) > 0.20:
         return False
     letters = _LETTER_PATTERN.findall(normalized)
     if not letters:
         return False
     hangul_count = len(_HANGUL_PATTERN.findall(normalized))
     # Keep translations that are mostly Korean while still allowing finance terms and tickers.
-    return hangul_count / len(letters) >= 0.25
+    return hangul_count / len(letters) >= 0.18
 
 
 def _mask_text(text: str, *, tickers: list[str] | None) -> _MaskedText:

@@ -3,8 +3,10 @@ from __future__ import annotations
 from app.schemas.enrichment import SummaryLine, XAIHighlightItem, XAIPayload
 from app.schemas.enrichment import SentimentLabel
 from app.services.translation.gemini_translation_service import _cached_translation_batch_completion
+from app.services.translation.gemini_translation_service import _parse_translation_batch_output
 from app.services.translation.gemini_translation_service import _polish_korean_financial_text
 from app.services.translation.gemini_translation_service import _unmask_text
+from app.services.translation.gemini_translation_service import _TranslationTask
 from app.services.translation.gemini_translation_service import build_localized_content
 
 
@@ -290,3 +292,43 @@ def test_build_localized_content_keeps_partial_summary_when_some_lines_fail(monk
     assert localized is not None
     assert localized.title == "애플이 가이던스를 상향했다"
     assert [line.line_number for line in localized.summary_3lines] == [1, 3]
+
+
+def test_parse_translation_batch_output_accepts_json_payload() -> None:
+    parsed = _parse_translation_batch_output(
+        """```json
+        {
+          "title": "애플이 가이던스를 상향했다",
+          "summary_1": "매출은 12% 증가했다",
+          "summary_2": "마진은 개선됐다"
+        }
+        ```""",
+        [
+            _TranslationTask(key="title", text="Apple raises guidance"),
+            _TranslationTask(key="summary_1", text="Revenue grew 12%"),
+            _TranslationTask(key="summary_2", text="Margins improved"),
+        ],
+    )
+
+    assert parsed["title"] == "애플이 가이던스를 상향했다"
+    assert parsed["summary_1"] == "매출은 12% 증가했다"
+    assert parsed["summary_2"] == "마진은 개선됐다"
+
+
+def test_parse_translation_batch_output_accepts_single_line_key_spans() -> None:
+    parsed = _parse_translation_batch_output(
+        (
+            "title|||애플이 가이던스를 상향했다 "
+            "summary_1|||매출은 12% 증가했다 "
+            "summary_2|||마진은 개선됐다"
+        ),
+        [
+            _TranslationTask(key="title", text="Apple raises guidance"),
+            _TranslationTask(key="summary_1", text="Revenue grew 12%"),
+            _TranslationTask(key="summary_2", text="Margins improved"),
+        ],
+    )
+
+    assert parsed["title"] == "애플이 가이던스를 상향했다"
+    assert parsed["summary_1"] == "매출은 12% 증가했다"
+    assert parsed["summary_2"] == "마진은 개선됐다"
