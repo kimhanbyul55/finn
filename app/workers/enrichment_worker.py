@@ -134,7 +134,7 @@ def _run_startup_checks() -> None:
 
     if settings.enable_gemini_summary and not settings.gemini_api_key:
         warnings.append(
-            "GEMINI_API_KEY is missing. Summarization will fall back to heuristic mode."
+            "GEMINI_API_KEY is missing. Summarization/translation will remain empty."
         )
 
     if warnings:
@@ -162,7 +162,6 @@ def _run_startup_checks() -> None:
         "worker_startup_check_passed",
         backend=backend,
         gemini_summary_enabled=settings.enable_gemini_summary,
-        gemini_translation_enabled=settings.enable_gemini_translation,
     )
 
 

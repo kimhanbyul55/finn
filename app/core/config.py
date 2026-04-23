@@ -35,7 +35,6 @@ class AppSettings:
     gemini_api_key: str | None
     gemini_api_base_url: str
     enable_gemini_summary: bool
-    enable_gemini_translation: bool
     enable_gemini_translation_repair: bool
     gemini_summary_model: str
     gemini_translation_model: str
@@ -101,7 +100,6 @@ def get_settings() -> AppSettings:
             os.getenv("GEMINI_API_BASE_URL") or "https://generativelanguage.googleapis.com/v1beta"
         ).rstrip("/"),
         enable_gemini_summary=_env_flag("GENAI_ENABLE_GEMINI_SUMMARY", default=True),
-        enable_gemini_translation=_env_flag("GENAI_ENABLE_GEMINI_TRANSLATION", default=False),
         enable_gemini_translation_repair=_env_flag(
             "GENAI_ENABLE_GEMINI_TRANSLATION_REPAIR",
             default=False,

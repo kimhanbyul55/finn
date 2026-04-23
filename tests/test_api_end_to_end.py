@@ -282,11 +282,7 @@ def test_news_result_reuses_stored_localized_payload(monkeypatch) -> None:
         SaveEnrichmentRequest(raw_news=request, enrichment=payload)
     )
 
-    def _fail_translation(*args, **kwargs):
-        raise AssertionError("localized should be reused without translation")
-
     monkeypatch.setattr(ingestion_route_module, "service", service)
-    monkeypatch.setattr("app.services.enrichment_service.build_localized_content", _fail_translation)
 
     client = TestClient(app)
     response = client.get("/api/v1/news/localized-cache-news-1/result")

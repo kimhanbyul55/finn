@@ -27,8 +27,6 @@ from app.schemas.storage import AnalysisOutcome, AnalysisStatus, EnrichmentStora
 from app.schemas.xai import XAIContributionDirection, XAIResult
 from app.services.orchestrator import EnrichmentOrchestrator
 from app.services.response_state import map_analysis_status_to_error_code
-from app.services.translation import build_localized_content
-from app.services.gemini import gemini_log_context
 
 settings = get_settings()
 
@@ -134,20 +132,8 @@ def build_api_enrichment_response(
     ]
     xai_payload = _build_xai_payload(payload.xai, api_sentiment)
     xai_display_payload = _build_xai_display_payload(payload.xai, api_sentiment)
-    with gemini_log_context(
-        news_id=payload.news_id,
-        link=str(payload.link),
-        gemini_context="api_response_localized",
-    ):
-        localized = payload.localized or build_localized_content(
-            title=payload.title,
-            summary_3lines=summary_lines,
-            xai=xai_payload,
-            sentiment_label=api_sentiment.label if api_sentiment is not None else None,
-            tickers=getattr(payload, "ticker", None),
-            xai_highlight_limit=settings.localized_xai_highlight_limit,
-            allow_gemini=True,
-        )
+    # Do not re-translate at response time. Reuse stored localized payload only.
+    localized = payload.localized
 
     return ArticleEnrichmentResponse(
         news_id=payload.news_id,
