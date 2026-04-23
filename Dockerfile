@@ -14,10 +14,14 @@ RUN apt-get update \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install the application package first so secrets are never baked into the image.
+# Install CPU-only PyTorch first. Zeabur runs this service on CPU, so CUDA/NVIDIA
+# wheels only make the image much larger without improving runtime performance.
 COPY pyproject.toml README.md ./
 COPY app ./app
 RUN python -m pip install --upgrade pip setuptools wheel \
+    && python -m pip install "torch>=2.3.0,<3.0.0" \
+        --index-url https://download.pytorch.org/whl/cpu \
+        --extra-index-url https://pypi.org/simple \
     && python -m pip install .
 
 # Create a non-root runtime user.
