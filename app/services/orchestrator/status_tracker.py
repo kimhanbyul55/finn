@@ -158,6 +158,11 @@ class PipelineStatusTracker:
         if nonfatal_failures:
             if len(nonfatal_failures) == 1:
                 failed_stage = nonfatal_failures[0].stage
+                if failed_stage == PipelineStageName.SUMMARIZE:
+                    return (
+                        AnalysisStatus.COMPLETED_WITH_PARTIAL_RESULTS,
+                        AnalysisOutcome.PARTIAL_SUCCESS,
+                    )
                 return _FAILURE_STATUS_BY_STAGE[failed_stage], AnalysisOutcome.PARTIAL_SUCCESS
             return (
                 AnalysisStatus.COMPLETED_WITH_PARTIAL_RESULTS,

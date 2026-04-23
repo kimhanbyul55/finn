@@ -538,6 +538,8 @@ def test_orchestrator_keeps_xai_when_summary_generation_fails(monkeypatch) -> No
         article_text="Revenue rose 12% year over year. Margins improved in the quarter.",
     )
 
+    assert payload.analysis_status == AnalysisStatus.COMPLETED_WITH_PARTIAL_RESULTS
+    assert payload.analysis_outcome == AnalysisOutcome.PARTIAL_SUCCESS
     assert payload.summary_3lines == []
     assert payload.sentiment is not None
     assert payload.xai is not None

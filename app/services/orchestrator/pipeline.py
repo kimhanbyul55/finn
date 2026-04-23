@@ -125,11 +125,6 @@ class EnrichmentOrchestrator:
             )
 
             if can_continue:
-                summary_3lines = self._run_summary_stage(
-                    request=request,
-                    cleaned_text=cleaned_text,
-                    tracker=tracker,
-                )
                 sentiment_result = self._run_sentiment_stage(
                     request=request,
                     cleaned_text=cleaned_text,
@@ -163,6 +158,11 @@ class EnrichmentOrchestrator:
                         PipelineStageName.MIXED_DETECTION,
                         "Skipped because sentiment analysis did not produce a result.",
                     )
+                summary_3lines = self._run_summary_stage(
+                    request=request,
+                    cleaned_text=cleaned_text,
+                    tracker=tracker,
+                )
         else:
             self._skip_after_fetch_failure(tracker)
 

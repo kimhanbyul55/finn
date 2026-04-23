@@ -95,6 +95,94 @@ def test_summarizer_splits_single_line_Gemini_output_into_three_sentences(monkey
     ]
 
 
+def test_summarizer_accepts_json_array_output(monkeypatch) -> None:
+    _cached_summary_completion.cache_clear()
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-2.5-flash-lite")
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": (
+                                '{"summary":["매출은 전년 대비 12% 증가했다.","영업 마진은 개선됐다.","회사는 연간 가이던스를 상향 조정했다."]}'
+                            )}]
+                        }
+                    }
+                ]
+            }
+
+    def _fake_post(*args, **kwargs):
+        return _Response()
+
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _fake_post)
+
+    summary = summarize_to_three_lines(
+        title="Company raises outlook after quarterly results",
+        article_text=(
+            "Revenue rose 12% year over year. "
+            "Operating margin improved. "
+            "Management raised full-year guidance."
+        ),
+    )
+
+    assert summary == [
+        "매출은 전년 대비 12% 증가했다.",
+        "영업 마진은 개선됐다.",
+        "회사는 연간 가이던스를 상향 조정했다.",
+    ]
+
+
+def test_summarizer_accepts_code_fenced_json_output(monkeypatch) -> None:
+    _cached_summary_completion.cache_clear()
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-2.5-flash-lite")
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": (
+                                "```json\n"
+                                '{"summary_1":"매출은 전년 대비 12% 증가했다.","summary_2":"영업 마진은 개선됐다.","summary_3":"회사는 연간 가이던스를 상향 조정했다."}\n'
+                                "```"
+                            )}]
+                        }
+                    }
+                ]
+            }
+
+    def _fake_post(*args, **kwargs):
+        return _Response()
+
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _fake_post)
+
+    summary = summarize_to_three_lines(
+        title="Company raises outlook after quarterly results",
+        article_text=(
+            "Revenue rose 12% year over year. "
+            "Operating margin improved. "
+            "Management raised full-year guidance."
+        ),
+    )
+
+    assert summary == [
+        "매출은 전년 대비 12% 증가했다.",
+        "영업 마진은 개선됐다.",
+        "회사는 연간 가이던스를 상향 조정했다.",
+    ]
+
+
 def test_summarizer_accepts_Gemini_output_even_when_numbers_differ(monkeypatch) -> None:
     _cached_summary_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")

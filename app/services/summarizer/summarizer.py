@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 from functools import lru_cache
@@ -20,6 +21,7 @@ _GENERIC_PREFIX_PATTERN = re.compile(
     r"^(?:the article|the report|this article|in the article)\s+(?:says|reports|notes|highlights)\s+that\s+",
     re.IGNORECASE,
 )
+_CODE_FENCE_PATTERN = re.compile(r"^```(?:json|text)?\s*|\s*```$", re.IGNORECASE)
 
 
 def summarize_to_three_lines(title: str, article_text: str) -> list[str]:
@@ -66,8 +68,13 @@ def _summarize_with_gemini(*, title: str, article_text: str) -> list[str] | None
 
 
 def _parse_summary_lines(content: str) -> list[str]:
+    normalized_content = _strip_code_fence(content)
+    structured_lines = _parse_structured_summary_lines(normalized_content)
+    if structured_lines:
+        return structured_lines
+
     lines: list[str] = []
-    for raw_line in content.splitlines():
+    for raw_line in normalized_content.splitlines():
         line = raw_line.strip()
         if not line:
             continue
@@ -85,6 +92,40 @@ def _parse_summary_lines(content: str) -> list[str]:
         if len(lines) == SUMMARY_LINE_COUNT:
             break
     return lines
+
+
+def _strip_code_fence(content: str) -> str:
+    return _CODE_FENCE_PATTERN.sub("", content.strip())
+
+
+def _parse_structured_summary_lines(content: str) -> list[str]:
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return []
+
+    candidates: list[str] = []
+    if isinstance(payload, dict):
+        if isinstance(payload.get("summary"), list):
+            candidates = [str(item).strip() for item in payload["summary"]]
+        elif isinstance(payload.get("lines"), list):
+            candidates = [str(item).strip() for item in payload["lines"]]
+        else:
+            ordered_keys = ("summary_1", "summary_2", "summary_3")
+            candidates = [str(payload.get(key, "")).strip() for key in ordered_keys]
+    elif isinstance(payload, list):
+        candidates = [str(item).strip() for item in payload]
+
+    normalized: list[str] = []
+    for text in candidates:
+        if not text:
+            continue
+        line = _normalize_generated_line(text)
+        if line:
+            normalized.append(line)
+        if len(normalized) == SUMMARY_LINE_COUNT:
+            break
+    return normalized
 
 
 def _split_generated_line(line: str) -> list[str]:
