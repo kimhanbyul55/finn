@@ -34,12 +34,28 @@ _HTML_SCRIPT_STYLE_PATTERN = re.compile(
 _HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 _BOILERPLATE_LINE_PATTERNS = [
     re.compile(r"^advertisement$", re.IGNORECASE),
+    re.compile(r"^advertisement:?$", re.IGNORECASE),
+    re.compile(r"^ad$", re.IGNORECASE),
+    re.compile(r"^ads$", re.IGNORECASE),
     re.compile(r"^sponsored content$", re.IGNORECASE),
+    re.compile(r"^sponsored$", re.IGNORECASE),
+    re.compile(r"^promoted content$", re.IGNORECASE),
+    re.compile(r"^paid content$", re.IGNORECASE),
+    re.compile(r"^partner content$", re.IGNORECASE),
     re.compile(r"^read more$", re.IGNORECASE),
     re.compile(r"^click here$", re.IGNORECASE),
     re.compile(r"^follow us on .+$", re.IGNORECASE),
     re.compile(r"^sign up for (?:our )?newsletter$", re.IGNORECASE),
     re.compile(r"^subscribe(?: now)?$", re.IGNORECASE),
+    re.compile(r"^continue reading$", re.IGNORECASE),
+    re.compile(r"^related (?:articles|stories|content|reads)$", re.IGNORECASE),
+    re.compile(r"^recommended (?:for you|stories)$", re.IGNORECASE),
+    re.compile(r"^image source: .+$", re.IGNORECASE),
+    re.compile(r"^source: .+getty images.*$", re.IGNORECASE),
+    re.compile(r"^this article was originally published on .+$", re.IGNORECASE),
+    re.compile(r"^story continues$", re.IGNORECASE),
+    re.compile(r"^watch live$", re.IGNORECASE),
+    re.compile(r"^watch now$", re.IGNORECASE),
     re.compile(r"^(?:privacy policy|cookie policy|terms of service)$", re.IGNORECASE),
     re.compile(r"^all rights reserved\.?$", re.IGNORECASE),
     re.compile(r"^condensed consolidated statements? of .+$", re.IGNORECASE),
@@ -50,6 +66,34 @@ _BOILERPLATE_LINE_PATTERNS = [
 ]
 _DATELINE_PREFIX_PATTERN = re.compile(
     r"^[A-Z][A-Z .'-]{1,30},\s+[A-Z][a-z]{2,9}\.?\s+\d{1,2}\s*(?:\([^)]*\))?\s*[-:]\s*"
+)
+_AD_TECH_PATTERN = re.compile(
+    r"(?:doubleclick|googletag|adslot|adserver|taboola|outbrain|sponsor)",
+    re.IGNORECASE,
+)
+_PROMO_CTA_KEYWORDS = (
+    "subscribe",
+    "sign up",
+    "join now",
+    "click here",
+    "read more",
+    "continue reading",
+    "learn more",
+    "download app",
+    "watch now",
+    "watch live",
+    "get started",
+)
+_PROMO_OFFER_KEYWORDS = (
+    "newsletter",
+    "premium",
+    "membership",
+    "special offer",
+    "trial",
+    "paid",
+    "sponsored",
+    "partner content",
+    "stock advisor",
 )
 
 
@@ -162,6 +206,8 @@ def _is_safe_boilerplate_line(line: str) -> bool:
         return True
     if _looks_like_table_header(line):
         return True
+    if _looks_like_promotional_cta_line(line):
+        return True
     return any(pattern.match(line) for pattern in _BOILERPLATE_LINE_PATTERNS)
 
 
@@ -179,6 +225,27 @@ def _is_transcript_speaker_marker_line(line: str) -> bool:
         return False
     content = _TRANSCRIPT_SPEAKER_PATTERN.sub("", line).strip()
     return not content
+
+
+def _looks_like_promotional_cta_line(line: str) -> bool:
+    compact = line.strip()
+    if not compact:
+        return False
+    lowered = compact.lower()
+    if _AD_TECH_PATTERN.search(lowered):
+        return True
+
+    cta_hits = sum(1 for keyword in _PROMO_CTA_KEYWORDS if keyword in lowered)
+    offer_hits = sum(1 for keyword in _PROMO_OFFER_KEYWORDS if keyword in lowered)
+    if cta_hits >= 2 and len(compact) <= 200:
+        return True
+    if cta_hits >= 1 and offer_hits >= 1 and len(compact) <= 220:
+        return True
+    if offer_hits >= 2 and len(compact) <= 180:
+        return True
+    if _looks_like_narrative_line(compact):
+        return False
+    return False
 
 
 def _looks_like_table_header(line: str) -> bool:

@@ -137,3 +137,31 @@ def test_clean_article_text_deduplicates_consecutive_identical_lines() -> None:
     cleaned = clean_article_text(raw_text)
 
     assert cleaned.count("Revenue rose 12% year over year.") == 1
+
+
+def test_clean_article_text_removes_promotional_cta_lines() -> None:
+    raw_text = (
+        "Revenue rose 14% year over year as enterprise demand remained strong.\n"
+        "Sign up for our premium newsletter and read more market insights.\n"
+        "Management raised full-year guidance."
+    )
+
+    cleaned = clean_article_text(raw_text)
+
+    assert "premium newsletter" not in cleaned.lower()
+    assert "Revenue rose 14% year over year" in cleaned
+    assert "Management raised full-year guidance." in cleaned
+
+
+def test_clean_article_text_removes_image_source_and_story_continues_noise() -> None:
+    raw_text = (
+        "Image source: Getty Images.\n"
+        "Story continues\n"
+        "Operating margin improved while revenue beat expectations."
+    )
+
+    cleaned = clean_article_text(raw_text)
+
+    assert "Image source: Getty Images." not in cleaned
+    assert "Story continues" not in cleaned
+    assert "Operating margin improved while revenue beat expectations." in cleaned
