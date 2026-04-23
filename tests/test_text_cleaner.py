@@ -92,3 +92,48 @@ def test_validate_article_text_requires_richer_article_bodies_by_default() -> No
 
     assert validation.is_valid is False
     assert validation.status.value == "too_short"
+
+
+def test_clean_article_text_removes_html_tags_and_script_noise() -> None:
+    raw_text = (
+        "<html><body><script>var x = 1;</script>"
+        "<p>Revenue rose 12% year over year.</p>"
+        "<p>Management raised guidance.</p>"
+        "</body></html>"
+    )
+
+    cleaned = clean_article_text(raw_text)
+
+    assert "var x = 1" not in cleaned
+    assert "<p>" not in cleaned
+    assert "Revenue rose 12% year over year." in cleaned
+    assert "Management raised guidance." in cleaned
+
+
+def test_clean_article_text_keeps_transcript_content_while_dropping_speaker_prefix() -> None:
+    raw_text = (
+        "Operator: Good day, and welcome to the earnings call.\n"
+        "CEO: Revenue rose 12% year over year and demand remained strong.\n"
+        "CFO: We raised full-year guidance."
+    )
+
+    cleaned = clean_article_text(raw_text)
+
+    assert "Operator:" not in cleaned
+    assert "CEO:" not in cleaned
+    assert "CFO:" not in cleaned
+    assert "Good day, and welcome to the earnings call." in cleaned
+    assert "Revenue rose 12% year over year and demand remained strong." in cleaned
+    assert "We raised full-year guidance." in cleaned
+
+
+def test_clean_article_text_deduplicates_consecutive_identical_lines() -> None:
+    raw_text = (
+        "Revenue rose 12% year over year.\n"
+        "Revenue rose 12% year over year.\n"
+        "Management raised guidance."
+    )
+
+    cleaned = clean_article_text(raw_text)
+
+    assert cleaned.count("Revenue rose 12% year over year.") == 1

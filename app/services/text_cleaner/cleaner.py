@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -26,6 +27,11 @@ _TRANSCRIPT_CUE_PATTERN = re.compile(
     r"^(?:question-and-answer session|q&a|prepared remarks|earnings call transcript|conference call)$",
     re.IGNORECASE,
 )
+_HTML_SCRIPT_STYLE_PATTERN = re.compile(
+    r"<(?:script|style)\b[^>]*>.*?</(?:script|style)>",
+    re.IGNORECASE | re.DOTALL,
+)
+_HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 _BOILERPLATE_LINE_PATTERNS = [
     re.compile(r"^advertisement$", re.IGNORECASE),
     re.compile(r"^sponsored content$", re.IGNORECASE),
@@ -69,15 +75,21 @@ def clean_article_text(raw_text: str) -> str:
     if not raw_text:
         return ""
 
-    text = raw_text.replace("\r\n", "\n").replace("\r", "\n").replace("\u000c", "\n")
+    text = html.unescape(raw_text)
+    text = _HTML_SCRIPT_STYLE_PATTERN.sub("\n", text)
+    text = _HTML_TAG_PATTERN.sub(" ", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\u000c", "\n")
     lines = text.split("\n")
 
     cleaned_lines: list[str] = []
     for line in lines:
         normalized_line = _normalize_line_whitespace(line)
+        normalized_line = _strip_transcript_speaker_prefix(normalized_line)
         if not normalized_line:
             continue
         if _is_safe_boilerplate_line(normalized_line):
+            continue
+        if cleaned_lines and normalized_line == cleaned_lines[-1]:
             continue
         cleaned_lines.append(normalized_line)
 
@@ -146,21 +158,27 @@ def _is_safe_boilerplate_line(line: str) -> bool:
         return True
     if _TRANSCRIPT_CUE_PATTERN.match(line.strip()):
         return True
-    if _looks_like_transcript_speaker_line(line):
+    if _is_transcript_speaker_marker_line(line):
         return True
     if _looks_like_table_header(line):
         return True
     return any(pattern.match(line) for pattern in _BOILERPLATE_LINE_PATTERNS)
 
 
-def _looks_like_transcript_speaker_line(line: str) -> bool:
-    # Drop sparse call-transcript dialog labels that harm summary/translation quality.
+def _strip_transcript_speaker_prefix(line: str) -> str:
+    if not line:
+        return ""
+    if not _TRANSCRIPT_SPEAKER_PATTERN.match(line):
+        return line
+    content = _TRANSCRIPT_SPEAKER_PATTERN.sub("", line).strip()
+    return content
+
+
+def _is_transcript_speaker_marker_line(line: str) -> bool:
     if not _TRANSCRIPT_SPEAKER_PATTERN.match(line):
         return False
     content = _TRANSCRIPT_SPEAKER_PATTERN.sub("", line).strip()
-    if not content:
-        return True
-    return len(content) <= 90 and len(content.split()) <= 16
+    return not content
 
 
 def _looks_like_table_header(line: str) -> bool:
