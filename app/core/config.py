@@ -30,8 +30,6 @@ class AppSettings:
     basic_auth_password: str | None
     gemini_api_key: str | None
     gemini_api_base_url: str
-    enable_gemini_summary: bool
-    enable_gemini_translation_repair: bool
     gemini_summary_model: str
     gemini_translation_model: str
     gemini_timeout_seconds: float
@@ -41,7 +39,6 @@ class AppSettings:
     gemini_translation_char_limit: int
     localized_xai_highlight_limit: int
     fail_on_suspicious_gpu_runtime: bool
-    fetch_blocked_domains: tuple[str, ...]
 
     @property
     def basic_auth_enabled(self) -> bool:
@@ -90,11 +87,6 @@ def get_settings() -> AppSettings:
         gemini_api_base_url=(
             os.getenv("GEMINI_API_BASE_URL") or "https://generativelanguage.googleapis.com/v1beta"
         ).rstrip("/"),
-        enable_gemini_summary=_env_flag("GENAI_ENABLE_GEMINI_SUMMARY", default=True),
-        enable_gemini_translation_repair=_env_flag(
-            "GENAI_ENABLE_GEMINI_TRANSLATION_REPAIR",
-            default=False,
-        ),
         gemini_summary_model="gemini-2.5-flash-lite",
         gemini_translation_model="gemini-2.5-flash-lite",
         gemini_timeout_seconds=float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20")),
@@ -107,20 +99,4 @@ def get_settings() -> AppSettings:
             "GENAI_FAIL_ON_SUSPICIOUS_GPU_RUNTIME",
             default=False,
         ),
-        fetch_blocked_domains=_parse_csv_env(
-            "GENAI_FETCH_BLOCKED_DOMAINS",
-            default=(
-                "finance.yahoo.com",
-                "www.finance.yahoo.com",
-                "news.yahoo.co.jp",
-            ),
-        ),
     )
-
-
-def _parse_csv_env(name: str, *, default: tuple[str, ...]) -> tuple[str, ...]:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    items = tuple(item.strip().lower() for item in value.split(",") if item.strip())
-    return items or default

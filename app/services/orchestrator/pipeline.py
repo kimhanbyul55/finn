@@ -20,7 +20,6 @@ from app.schemas.storage import (
     EnrichmentStoragePayload,
     PipelineStageName,
 )
-from app.services.article_fetcher import fetch_article_text
 from app.services.gemini import gemini_log_context
 from app.services.mixed_detector import (
     detect_article_level_mixed,
@@ -36,22 +35,6 @@ from app.services.xai import explain_sentiment, is_xai_backend_disabled
 
 logger = get_logger(__name__)
 settings = get_settings()
-
-
-def _is_remote_fetch_blocked(host: str) -> bool:
-    normalized_host = host.strip().lower().rstrip(".")
-    if not normalized_host:
-        return False
-
-    for blocked_domain in settings.fetch_blocked_domains:
-        normalized_blocked = blocked_domain.strip().lower().lstrip(".").rstrip(".")
-        if not normalized_blocked:
-            continue
-        if normalized_host == normalized_blocked:
-            return True
-        if normalized_host.endswith(f".{normalized_blocked}"):
-            return True
-    return False
 
 
 class EnrichmentOrchestrator:
@@ -252,86 +235,33 @@ class EnrichmentOrchestrator:
                 failure_category=None,
                 error_message=None,
             )
-        if _is_remote_fetch_blocked(str(request.link.host or "")):
-            message = (
-                "Remote article fetch is disabled for this publisher domain. "
-                "Supply article_text in the payload to enrich this article without crawling."
-            )
-            log_event(
-                logger,
-                logging.WARNING,
-                "article_fetch_skipped_blocked_domain",
-                news_id=request.news_id,
-                link=str(request.link),
-                publisher_domain=request.link.host,
-                blocked_domains=settings.fetch_blocked_domains,
-            )
-            tracker.fail(
-                PipelineStageName.FETCH,
-                message,
-                fatal=True,
-            )
-            return ArticleFetchResult(
-                link=str(request.link),
-                publisher_domain=request.link.host or "",
-                final_url=str(request.link),
-                raw_text="",
-                cleaned_text="",
-                fetch_status=ArticleFetchStatus.FETCH_FAILED,
-                retryable=False,
-                failure_category=ArticleFetchFailureCategory.ACCESS_BLOCKED,
-                error_message=message,
-            )
-        try:
-            fetch_result = fetch_article_text(str(request.link))
-        except Exception as exc:
-            log_event(
-                logger,
-                logging.ERROR,
-                "article_fetch_failed",
-                news_id=request.news_id,
-                link=str(request.link),
-                error=str(exc),
-            )
-            tracker.fail(
-                PipelineStageName.FETCH,
-                f"Article fetch raised an exception: {exc}",
-                fatal=True,
-            )
-            return ArticleFetchResult(
-                link=str(request.link),
-                raw_text="",
-                cleaned_text="",
-                fetch_status=ArticleFetchStatus.FETCH_FAILED,
-                error_message=f"Article fetch raised an exception: {exc}",
-            )
-
-        if fetch_result.fetch_status == ArticleFetchStatus.SUCCESS:
-            log_event(
-                logger,
-                logging.INFO,
-                "article_fetch_succeeded",
-                news_id=request.news_id,
-                link=str(request.link),
-                raw_text_length=len(fetch_result.raw_text),
-            )
-            tracker.complete(PipelineStageName.FETCH, "Article fetched successfully.")
-        else:
-            log_event(
-                logger,
-                logging.WARNING,
-                "article_fetch_failed",
-                news_id=request.news_id,
-                link=str(request.link),
-                fetch_status=fetch_result.fetch_status.value,
-                error=fetch_result.error_message,
-            )
-            tracker.fail(
-                PipelineStageName.FETCH,
-                fetch_result.error_message or "Article fetch failed.",
-                fatal=True,
-            )
-        return fetch_result
+        message = (
+            "Remote URL crawling has been removed. "
+            "Supply article_text (or summary_text) in the request payload."
+        )
+        log_event(
+            logger,
+            logging.WARNING,
+            "article_fetch_disabled_requires_provided_text",
+            news_id=request.news_id,
+            link=str(request.link),
+        )
+        tracker.fail(
+            PipelineStageName.FETCH,
+            message,
+            fatal=True,
+        )
+        return ArticleFetchResult(
+            link=str(request.link),
+            publisher_domain=request.link.host or "",
+            final_url=str(request.link),
+            raw_text="",
+            cleaned_text="",
+            fetch_status=ArticleFetchStatus.FETCH_FAILED,
+            retryable=False,
+            failure_category=ArticleFetchFailureCategory.ACCESS_BLOCKED,
+            error_message=message,
+        )
 
     def _run_clean_and_validate(
         self,

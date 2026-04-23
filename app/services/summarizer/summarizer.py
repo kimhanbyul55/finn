@@ -39,7 +39,7 @@ def summarize_to_three_lines(title: str, article_text: str) -> list[str]:
 
 def _summarize_with_gemini(*, title: str, article_text: str) -> list[str] | None:
     settings = get_settings()
-    if not settings.enable_gemini_summary or not gemini_is_enabled():
+    if not gemini_is_enabled():
         return None
 
     if len(article_text) > settings.gemini_summary_hard_char_limit:

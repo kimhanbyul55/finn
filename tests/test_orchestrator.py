@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-import app.services.orchestrator.pipeline as pipeline_module
 from app.repositories import InMemoryEnrichmentRepository
 from app.schemas.article_fetch import (
     ArticleFetchFailureCategory,
-    ArticleFetchResult,
     ArticleFetchStatus,
 )
 from app.schemas.enrichment import ArticleEnrichmentRequest
@@ -33,23 +30,7 @@ from app.schemas.xai import XAIResult
 from app.services.orchestrator.pipeline import EnrichmentOrchestrator
 
 
-def test_orchestrator_skips_remote_fetch_for_blocked_domain_without_direct_text(monkeypatch) -> None:
-    monkeypatch.setattr(
-        pipeline_module,
-        "settings",
-        replace(
-            pipeline_module.settings,
-            fetch_blocked_domains=("finance.yahoo.com",),
-        ),
-    )
-    monkeypatch.setattr(
-        pipeline_module,
-        "fetch_article_text",
-        lambda link: (_ for _ in ()).throw(
-            AssertionError("Blocked domains should not be fetched remotely.")
-        ),
-    )
-
+def test_orchestrator_requires_direct_text_when_remote_fetch_disabled() -> None:
     request = ArticleEnrichmentRequest(
         news_id="blocked-yahoo-news-1",
         title="Yahoo Finance article",
@@ -67,20 +48,10 @@ def test_orchestrator_skips_remote_fetch_for_blocked_domain_without_direct_text(
     assert result.fetch_result.fetch_status == ArticleFetchStatus.FETCH_FAILED
     assert result.fetch_result.retryable is False
     assert result.fetch_result.failure_category == ArticleFetchFailureCategory.ACCESS_BLOCKED
-    assert "Supply article_text" in (result.fetch_result.error_message or "")
+    assert "Remote URL crawling has been removed" in (result.fetch_result.error_message or "")
 
 
 def test_orchestrator_marks_partial_failure_when_xai_stage_fails(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.services.orchestrator.pipeline.fetch_article_text",
-        lambda link: ArticleFetchResult(
-            link=link,
-            raw_text="Revenue rose 12% year over year. Margins improved in the quarter.",
-            cleaned_text="",
-            fetch_status=ArticleFetchStatus.SUCCESS,
-            error_message=None,
-        ),
-    )
     monkeypatch.setattr(
         "app.services.orchestrator.pipeline.clean_article_text",
         lambda text: "Revenue rose 12% year over year. Margins improved in the quarter. Outlook was raised for the year.",
@@ -186,7 +157,10 @@ def test_orchestrator_marks_partial_failure_when_xai_stage_fails(monkeypatch) ->
         ticker=["AAPL"],
     )
 
-    payload = orchestrator.run(request)
+    payload = orchestrator.run_with_text(
+        request,
+        article_text="Revenue rose 12% year over year. Margins improved in the quarter.",
+    )
 
     assert payload.analysis_status == AnalysisStatus.XAI_FAILED
     assert payload.analysis_outcome == AnalysisOutcome.PARTIAL_SUCCESS
@@ -200,16 +174,6 @@ def test_orchestrator_marks_partial_failure_when_xai_stage_fails(monkeypatch) ->
 
 
 def test_orchestrator_skips_xai_in_base_pipeline_by_default(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.services.orchestrator.pipeline.fetch_article_text",
-        lambda link: ArticleFetchResult(
-            link=link,
-            raw_text="Revenue rose 12% year over year. Margins improved in the quarter.",
-            cleaned_text="",
-            fetch_status=ArticleFetchStatus.SUCCESS,
-            error_message=None,
-        ),
-    )
     monkeypatch.setattr(
         "app.services.orchestrator.pipeline.clean_article_text",
         lambda text: "Revenue rose 12% year over year. Margins improved in the quarter. Outlook was raised for the year.",
@@ -315,7 +279,10 @@ def test_orchestrator_skips_xai_in_base_pipeline_by_default(monkeypatch) -> None
         ticker=["AAPL"],
     )
 
-    payload = orchestrator.run(request)
+    payload = orchestrator.run_with_text(
+        request,
+        article_text="Revenue rose 12% year over year. Margins improved in the quarter.",
+    )
 
     assert payload.analysis_status == AnalysisStatus.COMPLETED
     assert payload.analysis_outcome == AnalysisOutcome.SUCCESS
@@ -327,16 +294,6 @@ def test_orchestrator_skips_xai_in_base_pipeline_by_default(monkeypatch) -> None
 
 
 def test_orchestrator_skips_xai_when_backend_is_disabled(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.services.orchestrator.pipeline.fetch_article_text",
-        lambda link: ArticleFetchResult(
-            link=link,
-            raw_text="Revenue rose 12% year over year. Margins improved in the quarter.",
-            cleaned_text="",
-            fetch_status=ArticleFetchStatus.SUCCESS,
-            error_message=None,
-        ),
-    )
     monkeypatch.setattr(
         "app.services.orchestrator.pipeline.clean_article_text",
         lambda text: "Revenue rose 12% year over year. Margins improved in the quarter. Outlook was raised for the year.",
@@ -446,7 +403,10 @@ def test_orchestrator_skips_xai_when_backend_is_disabled(monkeypatch) -> None:
         ticker=["AAPL"],
     )
 
-    payload = orchestrator.run(request)
+    payload = orchestrator.run_with_text(
+        request,
+        article_text="Revenue rose 12% year over year. Margins improved in the quarter.",
+    )
 
     assert payload.analysis_status == AnalysisStatus.COMPLETED
     assert payload.analysis_outcome == AnalysisOutcome.SUCCESS
@@ -458,16 +418,6 @@ def test_orchestrator_skips_xai_when_backend_is_disabled(monkeypatch) -> None:
 
 
 def test_orchestrator_keeps_xai_when_summary_generation_fails(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.services.orchestrator.pipeline.fetch_article_text",
-        lambda link: ArticleFetchResult(
-            link=link,
-            raw_text="Revenue rose 12% year over year. Margins improved in the quarter.",
-            cleaned_text="",
-            fetch_status=ArticleFetchStatus.SUCCESS,
-            error_message=None,
-        ),
-    )
     monkeypatch.setattr(
         "app.services.orchestrator.pipeline.clean_article_text",
         lambda text: (
@@ -583,7 +533,10 @@ def test_orchestrator_keeps_xai_when_summary_generation_fails(monkeypatch) -> No
         ticker=["AAPL"],
     )
 
-    payload = orchestrator.run(request)
+    payload = orchestrator.run_with_text(
+        request,
+        article_text="Revenue rose 12% year over year. Margins improved in the quarter.",
+    )
 
     assert payload.summary_3lines == []
     assert payload.sentiment is not None
@@ -600,16 +553,6 @@ def test_orchestrator_keeps_xai_when_summary_generation_fails(monkeypatch) -> No
 
 def test_orchestrator_marks_empty_clean_output_as_filtered(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.services.orchestrator.pipeline.fetch_article_text",
-        lambda link: ArticleFetchResult(
-            link=link,
-            raw_text="raw text that gets filtered",
-            cleaned_text="",
-            fetch_status=ArticleFetchStatus.SUCCESS,
-            error_message=None,
-        ),
-    )
-    monkeypatch.setattr(
         "app.services.orchestrator.pipeline.clean_article_text",
         lambda text: "   ",
     )
@@ -623,7 +566,10 @@ def test_orchestrator_marks_empty_clean_output_as_filtered(monkeypatch) -> None:
         ticker=["AAPL"],
     )
 
-    payload = orchestrator.run(request)
+    payload = orchestrator.run_with_text(
+        request,
+        article_text="raw text that gets filtered",
+    )
 
     assert payload.analysis_status == AnalysisStatus.CLEAN_FILTERED
     assert payload.analysis_outcome == AnalysisOutcome.FILTERED
@@ -635,16 +581,6 @@ def test_orchestrator_marks_empty_clean_output_as_filtered(monkeypatch) -> None:
 
 
 def test_orchestrator_marks_invalid_text_as_filtered(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.services.orchestrator.pipeline.fetch_article_text",
-        lambda link: ArticleFetchResult(
-            link=link,
-            raw_text="short text",
-            cleaned_text="",
-            fetch_status=ArticleFetchStatus.SUCCESS,
-            error_message=None,
-        ),
-    )
     monkeypatch.setattr(
         "app.services.orchestrator.pipeline.clean_article_text",
         lambda text: "short cleaned text",
@@ -668,7 +604,10 @@ def test_orchestrator_marks_invalid_text_as_filtered(monkeypatch) -> None:
         ticker=["AAPL"],
     )
 
-    payload = orchestrator.run(request)
+    payload = orchestrator.run_with_text(
+        request,
+        article_text="short text",
+    )
 
     assert payload.analysis_status == AnalysisStatus.VALIDATE_FILTERED
     assert payload.analysis_outcome == AnalysisOutcome.FILTERED

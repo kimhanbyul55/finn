@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass
 from functools import lru_cache
@@ -10,7 +9,7 @@ from urllib.parse import urlparse
 import requests
 from requests import Response, Session
 from requests.adapters import HTTPAdapter
-from requests.exceptions import RequestException, SSLError
+from requests.exceptions import RequestException
 from urllib3.util.retry import Retry
 
 from app.schemas.article_fetch import (
@@ -79,56 +78,35 @@ def fetch_html(
 ) -> _FetchedHTML:
     """Fetch raw article HTML with a shared session and explicit retry policy."""
     active_retry_policy = retry_policy or FetchRetryPolicy()
-    allow_insecure_ssl_fallback = _should_allow_insecure_ssl_fallback()
     session = _get_http_session()
     last_error: Exception | None = None
 
     for attempt_index in range(active_retry_policy.max_retries + 1):
         user_agent = BROWSER_USER_AGENTS[min(attempt_index, len(BROWSER_USER_AGENTS) - 1)]
-        verify_options = [_tls_verify_value()]
-        if allow_insecure_ssl_fallback:
-            verify_options.append(False)
-
-        for verify in verify_options:
-            try:
-                response = _fetch_html_once(
-                    session=session,
-                    link=link,
-                    timeout_seconds=timeout_seconds,
-                    user_agent=user_agent,
-                    verify=verify,
-                )
-                _raise_for_response_status(response)
-                html, content_type = _response_to_html(response)
-                return _FetchedHTML(
-                    html=html,
-                    final_url=str(response.url),
-                    content_type=content_type,
-                    attempt_count=attempt_index + 1,
-                )
-            except SSLError as exc:
-                last_error = exc
-                if verify is False:
-                    continue
-                if not allow_insecure_ssl_fallback:
-                    hint = (
-                        " Set GENAI_ALLOW_INSECURE_SSL_FALLBACK=true only in trusted "
-                        "test environments if you need a temporary TLS bypass."
-                    )
-                    raise _FetchDiagnosticError(
-                        message=f"SSL certificate verification failed: {exc}.{hint}",
-                        retryable=active_retry_policy.should_retry(exc, attempt_index=attempt_index),
-                        failure_category=ArticleFetchFailureCategory.SSL_ERROR,
-                        attempt_count=attempt_index + 1,
-                    ) from exc
-            except RequestException as exc:
-                last_error = exc
-                if not active_retry_policy.should_retry(exc, attempt_index=attempt_index):
-                    raise _request_exception_to_diagnostic_error(
-                        exc,
-                        retry_policy=active_retry_policy,
-                        attempt_index=attempt_index,
-                    ) from exc
+        try:
+            response = _fetch_html_once(
+                session=session,
+                link=link,
+                timeout_seconds=timeout_seconds,
+                user_agent=user_agent,
+                verify=_tls_verify_value(),
+            )
+            _raise_for_response_status(response)
+            html, content_type = _response_to_html(response)
+            return _FetchedHTML(
+                html=html,
+                final_url=str(response.url),
+                content_type=content_type,
+                attempt_count=attempt_index + 1,
+            )
+        except RequestException as exc:
+            last_error = exc
+            if not active_retry_policy.should_retry(exc, attempt_index=attempt_index):
+                raise _request_exception_to_diagnostic_error(
+                    exc,
+                    retry_policy=active_retry_policy,
+                    attempt_index=attempt_index,
+                ) from exc
 
         if last_error is not None and active_retry_policy.should_retry(
             last_error,
@@ -365,11 +343,6 @@ def _response_to_html(response: Response) -> tuple[str, str | None]:
     if not response.encoding:
         response.encoding = response.apparent_encoding or "utf-8"
     return response.text, content_type or None
-
-
-def _should_allow_insecure_ssl_fallback() -> bool:
-    value = os.getenv("GENAI_ALLOW_INSECURE_SSL_FALLBACK", "")
-    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _format_http_error_message(

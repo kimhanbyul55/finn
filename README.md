@@ -245,12 +245,8 @@ scripts/supabase_lockdown_genai_tables.sql
   - 제목, 3줄 요약, XAI 하이라이트의 UI용 한글 생성/번역에 사용
 - `GEMINI_API_BASE_URL`
   - 기본값 `https://generativelanguage.googleapis.com/v1beta`
-- `GENAI_ENABLE_GEMINI_SUMMARY`
-  - 3줄 요약 Gemini 활성화 여부
-- `GENAI_ENABLE_GEMINI_TRANSLATION_REPAIR`
-  - 번역 결과가 한국어 검증 실패 시 2차 복구 호출 사용 여부
 - `GENAI_FAIL_ON_SUSPICIOUS_GPU_RUNTIME`
-  - 기본값 `true`
+  - 기본값 `false`
   - CPU 서비스에서 GPU 패키지 흔적(`nvidia-*`, `triton`, torch CUDA build)이 감지되면 웹/워커 시작을 차단
 - `GENAI_DIRECT_ENRICHMENT_POLL_INTERVAL`
   - 직접 분석 요청 대기 polling 간격

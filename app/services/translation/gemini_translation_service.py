@@ -233,21 +233,11 @@ def _translate_tasks(
     )
     unmasked = _unmask_text(translated, masked.replacements)
     parsed = _parse_translation_batch_output(unmasked, prepared_tasks)
-    invalid_tasks: list[_TranslationTask] = []
-
     for task in prepared_tasks:
         translated_text = parsed.get(task.key, "")
         polished = _polish_korean_financial_text(translated_text)
         if _is_usable_korean_translation(polished):
             results[task.key] = polished
-        else:
-            invalid_tasks.append(task)
-
-    if invalid_tasks:
-        if not get_settings().enable_gemini_translation_repair:
-            return results
-        repaired = _repair_invalid_translations(invalid_tasks, tickers=tickers)
-        results.update(repaired)
     return results
 
 
@@ -289,43 +279,6 @@ def _is_usable_korean_translation(text: str) -> bool:
     if _DISALLOWED_TRANSLATION_SCRIPT_PATTERN.search(normalized):
         return False
     return _looks_already_korean(normalized)
-
-
-def _repair_invalid_translations(
-    tasks: list[_TranslationTask],
-    *,
-    tickers: list[str] | None,
-) -> dict[str, str]:
-    if not tasks:
-        return {}
-
-    batch_payload = _build_translation_batch_payload(tasks)
-    masked = _mask_text(batch_payload, tickers=tickers)
-    try:
-        translated = _cached_translation_repair_completion(
-            get_settings().gemini_api_base_url,
-            get_settings().gemini_translation_model,
-            masked.text,
-            "translate_localized_payload_repair",
-        )
-    except Exception:
-        logger.exception("Gemini translation repair failed.")
-        return {}
-
-    unmasked = _unmask_text(translated, masked.replacements)
-    parsed = _parse_translation_batch_output(unmasked, tasks)
-    repaired: dict[str, str] = {}
-    for task in tasks:
-        translated_text = parsed.get(task.key, "")
-        polished = _polish_korean_financial_text(translated_text)
-        if _is_usable_korean_translation(polished):
-            repaired[task.key] = polished
-        else:
-            logger.warning(
-                "Gemini translation failed Korean validation.",
-                extra={"translation_key": task.key},
-            )
-    return repaired
 
 
 def _mask_text(text: str, *, tickers: list[str] | None) -> _MaskedText:
@@ -394,32 +347,6 @@ def _cached_translation_batch_completion(
             "Prefer standard financial terms such as '가이던스', '전년 대비', and '경영진' when appropriate. "
             "Keep placeholders unchanged. "
             "Keep numbers, percentages, dates, currencies, ticker symbols, and finance abbreviations exactly as written. "
-            "Do not add commentary, quotation marks, bullets, explanations, or extra lines."
-        ),
-        user_prompt=masked_payload,
-        temperature=0.0,
-        request_label=request_label,
-    )
-
-
-@lru_cache(maxsize=128)
-def _cached_translation_repair_completion(
-    base_url: str,
-    model: str,
-    masked_payload: str,
-    request_label: str,
-) -> str:
-    del base_url
-    return gemini_generate_content(
-        model=model,
-        system_prompt=(
-            "You are a strict Korean-only financial news translation validator and repairer. "
-            "Input lines are formatted as KEY|||TEXT. "
-            "Return the same keys in the exact same KEY|||TEXT format. "
-            "Rewrite every TEXT into natural Korean financial news style. "
-            "The output must be Korean only, except protected placeholders, ticker symbols, company names, "
-            "numbers, percentages, dates, currencies, and standard finance abbreviations. "
-            "Never output Hindi, Chinese, Japanese, romanized Hindi, or mixed-language sentences. "
             "Do not add commentary, quotation marks, bullets, explanations, or extra lines."
         ),
         user_prompt=masked_payload,

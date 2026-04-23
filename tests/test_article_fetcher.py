@@ -11,7 +11,6 @@ from app.services.article_fetcher.fetcher import (
     _format_http_error_message,
     _response_to_html,
     _tls_verify_value,
-    _should_allow_insecure_ssl_fallback,
     fetch_article_text,
 )
 from app.schemas.article_fetch import ArticleFetchFailureCategory
@@ -51,18 +50,6 @@ def test_build_headers_uses_browser_like_defaults() -> None:
     assert "text/html" in headers["Accept"]
     assert headers["Referer"] == "https://www.reuters.com"
     assert headers["Accept-Encoding"] == "gzip, deflate"
-
-
-def test_insecure_ssl_fallback_flag_defaults_to_false(monkeypatch) -> None:
-    monkeypatch.delenv("GENAI_ALLOW_INSECURE_SSL_FALLBACK", raising=False)
-
-    assert _should_allow_insecure_ssl_fallback() is False
-
-
-def test_insecure_ssl_fallback_flag_reads_truthy_values(monkeypatch) -> None:
-    monkeypatch.setenv("GENAI_ALLOW_INSECURE_SSL_FALLBACK", "true")
-
-    assert _should_allow_insecure_ssl_fallback() is True
 
 
 def test_retry_policy_retries_rate_limit_and_stops_after_max_retries() -> None:

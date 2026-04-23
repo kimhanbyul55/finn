@@ -141,7 +141,7 @@ def _run_startup_checks() -> None:
         else:
             warnings.append(message)
 
-    if settings.enable_gemini_summary and not settings.gemini_api_key:
+    if not settings.gemini_api_key:
         warnings.append(
             "GEMINI_API_KEY is missing. Summarization/translation will remain empty."
         )
@@ -170,7 +170,6 @@ def _run_startup_checks() -> None:
         20,
         "worker_startup_check_passed",
         backend=backend,
-        gemini_summary_enabled=settings.enable_gemini_summary,
         fail_on_suspicious_gpu_runtime=settings.fail_on_suspicious_gpu_runtime,
         runtime_suspicious_gpu_runtime=bool(runtime["suspicious_gpu_runtime"]),
         runtime_torch_cuda_version=runtime["torch_cuda_version"],
