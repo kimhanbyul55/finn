@@ -8,7 +8,7 @@ from app.services.summarizer.summarizer import _cached_summary_completion
 def test_summarizer_uses_Gemini_when_configured(monkeypatch) -> None:
     _cached_summary_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-1.5-flash")
+    monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-2.5-flash")
 
     class _Response:
         def raise_for_status(self) -> None:
@@ -53,7 +53,7 @@ def test_summarizer_uses_Gemini_when_configured(monkeypatch) -> None:
 def test_summarizer_splits_single_line_Gemini_output_into_three_sentences(monkeypatch) -> None:
     _cached_summary_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-1.5-flash")
+    monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-2.5-flash")
 
     class _Response:
         def raise_for_status(self) -> None:
@@ -98,7 +98,7 @@ def test_summarizer_splits_single_line_Gemini_output_into_three_sentences(monkey
 def test_summarizer_rejects_Gemini_output_with_invented_numbers(monkeypatch) -> None:
     _cached_summary_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-1.5-flash")
+    monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-2.5-flash")
 
     class _Response:
         def raise_for_status(self) -> None:
@@ -143,7 +143,7 @@ def test_summarizer_rejects_Gemini_output_with_invented_numbers(monkeypatch) -> 
 def test_summarizer_skips_Gemini_for_oversized_articles(monkeypatch) -> None:
     _cached_summary_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-1.5-flash")
+    monkeypatch.setenv("GEMINI_SUMMARY_MODEL", "gemini-2.5-flash")
     monkeypatch.setenv("GEMINI_SUMMARY_HARD_CHAR_LIMIT", "100")
 
     def _unexpected_post(*args, **kwargs):

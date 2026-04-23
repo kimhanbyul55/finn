@@ -107,10 +107,10 @@ def get_settings() -> AppSettings:
             default=False,
         ),
         gemini_summary_model=(
-            os.getenv("GEMINI_SUMMARY_MODEL") or "gemini-1.5-flash"
+            os.getenv("GEMINI_SUMMARY_MODEL") or "gemini-2.5-flash"
         ).strip(),
         gemini_translation_model=(
-            os.getenv("GEMINI_TRANSLATION_MODEL") or "gemini-1.5-flash"
+            os.getenv("GEMINI_TRANSLATION_MODEL") or "gemini-2.5-flash"
         ).strip(),
         gemini_timeout_seconds=float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20")),
         gemini_retry_after_max_seconds=float(os.getenv("GEMINI_RETRY_AFTER_MAX_SECONDS", "0")),
