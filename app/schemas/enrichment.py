@@ -385,6 +385,32 @@ class StageIOMetric(SchemaModel):
     )
 
 
+class AlertMode(str, Enum):
+    ALL = "all"
+    SENTIMENT_ONLY = "sentiment_only"
+
+
+class AlertDecision(SchemaModel):
+    should_send: bool = Field(
+        ...,
+        description="Whether this article should trigger downstream alert delivery.",
+    )
+    mode: AlertMode = Field(
+        ...,
+        description="Applied alert policy mode.",
+    )
+    reason_code: str = Field(
+        ...,
+        min_length=1,
+        description="Stable machine-readable decision reason.",
+    )
+    reason: str = Field(
+        ...,
+        min_length=1,
+        description="Human-readable explanation of the alert decision.",
+    )
+
+
 class ArticleEnrichmentResponse(SchemaModel):
     news_id: str = Field(..., description="Unique news identifier.")
     title: str = Field(..., description="Original article title.")
@@ -443,6 +469,10 @@ class ArticleEnrichmentResponse(SchemaModel):
     stage_io_metrics: list[StageIOMetric] = Field(
         default_factory=list,
         description="Per-stage input/output volume diagnostics.",
+    )
+    alert_decision: AlertDecision | None = Field(
+        default=None,
+        description="Alert policy decision derived from sentiment and runtime settings.",
     )
 
     @field_validator("summary_3lines", mode="before")

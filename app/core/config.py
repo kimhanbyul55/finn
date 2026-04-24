@@ -38,6 +38,9 @@ class AppSettings:
     gemini_summary_hard_char_limit: int
     gemini_translation_char_limit: int
     localized_xai_highlight_limit: int
+    alerts_enabled: bool
+    sentiment_only_alerts: bool
+    sentiment_alert_min_confidence: float
     sentiment_positive_score_threshold: float
     sentiment_negative_score_threshold: float
     fail_on_suspicious_gpu_runtime: bool
@@ -97,6 +100,11 @@ def get_settings() -> AppSettings:
         gemini_summary_hard_char_limit=int(os.getenv("GEMINI_SUMMARY_HARD_CHAR_LIMIT", "6500")),
         gemini_translation_char_limit=int(os.getenv("GEMINI_TRANSLATION_CHAR_LIMIT", "1200")),
         localized_xai_highlight_limit=int(os.getenv("GENAI_LOCALIZED_XAI_HIGHLIGHT_LIMIT", "2")),
+        alerts_enabled=_env_flag("GENAI_ALERTS_ENABLED", default=True),
+        sentiment_only_alerts=_env_flag("GENAI_SENTIMENT_ONLY_ALERTS", default=False),
+        sentiment_alert_min_confidence=float(
+            os.getenv("GENAI_SENTIMENT_ALERT_MIN_CONFIDENCE", "0.45")
+        ),
         sentiment_positive_score_threshold=float(
             os.getenv("GENAI_SENTIMENT_POSITIVE_SCORE_THRESHOLD", "8")
         ),

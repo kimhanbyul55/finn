@@ -4,6 +4,8 @@ from app.core import get_settings
 from app.services.direct_enrichment_job_service import DirectEnrichmentJobService
 from app.repositories import EnrichmentRepository, create_repository
 from app.schemas.enrichment import (
+    AlertDecision,
+    AlertMode,
     ArticleEnrichmentRequest,
     ArticleEnrichmentResponse,
     DirectTextEnrichmentRequest,
@@ -154,6 +156,7 @@ def build_api_enrichment_response(
         error=_build_error_detail(payload),
         stage_statuses=[_map_stage_status(stage) for stage in payload.stage_statuses],
         stage_io_metrics=[_map_stage_io_metric(item) for item in payload.stage_io_metrics],
+        alert_decision=_build_alert_decision(api_sentiment),
     )
 
 
@@ -391,3 +394,63 @@ def _map_highlight_signal(
         SentimentLabel.MIXED: SentimentLabel.MIXED,
     }
     return opposite_map[target_label]
+
+
+def _build_alert_decision(sentiment: SentimentResult | None) -> AlertDecision:
+    if not settings.alerts_enabled:
+        return AlertDecision(
+            should_send=False,
+            mode=AlertMode.ALL,
+            reason_code="alerts_disabled",
+            reason="All alerts are disabled by runtime policy.",
+        )
+
+    if not settings.sentiment_only_alerts:
+        return AlertDecision(
+            should_send=True,
+            mode=AlertMode.ALL,
+            reason_code="all_alerts_enabled",
+            reason="All article alerts are enabled regardless of sentiment.",
+        )
+
+    if sentiment is None:
+        return AlertDecision(
+            should_send=False,
+            mode=AlertMode.SENTIMENT_ONLY,
+            reason_code="sentiment_missing",
+            reason="Sentiment-only alert mode requires a sentiment result.",
+        )
+
+    if sentiment.confidence < settings.sentiment_alert_min_confidence:
+        return AlertDecision(
+            should_send=False,
+            mode=AlertMode.SENTIMENT_ONLY,
+            reason_code="sentiment_confidence_low",
+            reason=(
+                "Sentiment confidence is below the minimum threshold "
+                f"({settings.sentiment_alert_min_confidence:.2f})."
+            ),
+        )
+
+    if sentiment.label in {SentimentLabel.BULLISH, SentimentLabel.BEARISH}:
+        return AlertDecision(
+            should_send=True,
+            mode=AlertMode.SENTIMENT_ONLY,
+            reason_code="sentiment_label_allowed",
+            reason="Sentiment-only alert mode allows bullish/bearish articles.",
+        )
+
+    if sentiment.label == SentimentLabel.NEUTRAL:
+        return AlertDecision(
+            should_send=False,
+            mode=AlertMode.SENTIMENT_ONLY,
+            reason_code="sentiment_neutral_filtered",
+            reason="Neutral sentiment is excluded in sentiment-only alert mode.",
+        )
+
+    return AlertDecision(
+        should_send=False,
+        mode=AlertMode.SENTIMENT_ONLY,
+        reason_code="sentiment_mixed_filtered",
+        reason="Mixed sentiment is excluded in sentiment-only alert mode.",
+    )
