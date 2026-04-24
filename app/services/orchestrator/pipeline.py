@@ -28,7 +28,7 @@ from app.services.mixed_detector import (
 from app.services.orchestrator.status_tracker import PipelineStatusTracker
 from app.services.payload_builder import build_enrichment_storage_payload
 from app.services.sentiment import analyze_sentiment
-from app.services.summarizer import summarize_to_three_lines
+from app.services.summarizer import summarize_to_three_lines_result
 from app.services.text_cleaner import clean_article_text, validate_article_text
 from app.services.xai import explain_sentiment, is_xai_backend_disabled
 
@@ -360,10 +360,11 @@ class EnrichmentOrchestrator:
     ) -> list[str] | None:
         tracker.start(PipelineStageName.SUMMARIZE)
         try:
-            summary_3lines = summarize_to_three_lines(
+            summary_result = summarize_to_three_lines_result(
                 title=request.title,
                 article_text=cleaned_text,
             )
+            summary_3lines = summary_result.lines
         except Exception as exc:
             log_event(
                 logger,
@@ -399,11 +400,15 @@ class EnrichmentOrchestrator:
             "summary_generation_failed",
             news_id=request.news_id,
             summary_line_count=len(summary_3lines),
+            failure_code=summary_result.failure_code,
             error="Summary generation did not return three usable summary lines.",
         )
         tracker.fail(
             PipelineStageName.SUMMARIZE,
-            "Summary generation did not return three usable summary lines.",
+            (
+                f"Summary generation did not return three usable summary lines. "
+                f"(failure_code={summary_result.failure_code or 'unknown'})"
+            ),
             fatal=False,
         )
         return summary_3lines

@@ -66,8 +66,11 @@ def test_orchestrator_marks_partial_failure_when_xai_stage_fails(monkeypatch) ->
         ),
     )
     monkeypatch.setattr(
-        "app.services.orchestrator.pipeline.summarize_to_three_lines",
-        lambda title, article_text: ["line 1", "line 2", "line 3"],
+        "app.services.orchestrator.pipeline.summarize_to_three_lines_result",
+        lambda title, article_text: SimpleNamespace(
+            lines=["line 1", "line 2", "line 3"],
+            failure_code=None,
+        ),
     )
     monkeypatch.setattr(
         "app.services.orchestrator.pipeline.analyze_sentiment",
@@ -188,8 +191,11 @@ def test_orchestrator_skips_xai_in_base_pipeline_by_default(monkeypatch) -> None
         ),
     )
     monkeypatch.setattr(
-        "app.services.orchestrator.pipeline.summarize_to_three_lines",
-        lambda title, article_text: ["line 1", "line 2", "line 3"],
+        "app.services.orchestrator.pipeline.summarize_to_three_lines_result",
+        lambda title, article_text: SimpleNamespace(
+            lines=["line 1", "line 2", "line 3"],
+            failure_code=None,
+        ),
     )
     monkeypatch.setattr(
         "app.services.orchestrator.pipeline.analyze_sentiment",
@@ -308,8 +314,11 @@ def test_orchestrator_skips_xai_when_backend_is_disabled(monkeypatch) -> None:
         ),
     )
     monkeypatch.setattr(
-        "app.services.orchestrator.pipeline.summarize_to_three_lines",
-        lambda title, article_text: ["line 1", "line 2", "line 3"],
+        "app.services.orchestrator.pipeline.summarize_to_three_lines_result",
+        lambda title, article_text: SimpleNamespace(
+            lines=["line 1", "line 2", "line 3"],
+            failure_code=None,
+        ),
     )
     monkeypatch.setattr(
         "app.services.orchestrator.pipeline.analyze_sentiment",
@@ -435,8 +444,11 @@ def test_orchestrator_keeps_xai_when_summary_generation_fails(monkeypatch) -> No
         ),
     )
     monkeypatch.setattr(
-        "app.services.orchestrator.pipeline.summarize_to_three_lines",
-        lambda title, article_text: ["", "", ""],
+        "app.services.orchestrator.pipeline.summarize_to_three_lines_result",
+        lambda title, article_text: SimpleNamespace(
+            lines=["", "", ""],
+            failure_code="invalid_shape",
+        ),
     )
     sentiment_result = SentimentResult(
         label=FinBERTSentimentLabel.POSITIVE,

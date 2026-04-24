@@ -6,6 +6,7 @@ from app.services.text_cleaner.cleaner import (
     ArticleTextValidationStatus,
     clean_article_text,
     explain_cleaning_decisions,
+    is_probably_clean_text,
     is_article_text_usable,
     validate_article_text,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "CleaningLineDecision",
     "clean_article_text",
     "explain_cleaning_decisions",
+    "is_probably_clean_text",
     "is_article_text_usable",
     "validate_article_text",
 ]

@@ -290,6 +290,8 @@ def clean_article_text(raw_text: str) -> str:
     """Clean article text conservatively without removing likely financial content."""
     if not raw_text:
         return ""
+    if _looks_like_already_cleaned_text(raw_text):
+        return raw_text.strip()
 
     text = html.unescape(raw_text)
     text = _HTML_SCRIPT_STYLE_PATTERN.sub("\n", text)
@@ -363,6 +365,10 @@ def is_article_text_usable(text: str) -> bool:
     return validate_article_text(text).is_valid
 
 
+def is_probably_clean_text(text: str) -> bool:
+    return _looks_like_already_cleaned_text(text)
+
+
 def explain_cleaning_decisions(raw_text: str) -> list[CleaningLineDecision]:
     if not raw_text:
         return []
@@ -384,6 +390,40 @@ def _normalize_line_whitespace(line: str) -> str:
     normalized = _INTERNAL_WHITESPACE_PATTERN.sub(" ", line.strip())
     normalized = _DATELINE_PREFIX_PATTERN.sub("", normalized)
     return normalized
+
+
+def _looks_like_already_cleaned_text(text: str) -> bool:
+    sample = text.strip()
+    if not sample:
+        return True
+    if len(sample) < 80:
+        return False
+    quick_html_markers = ("<script", "<style", "<div", "<span", "</", "<a ")
+    if any(marker in sample.lower() for marker in quick_html_markers):
+        return False
+    if "Story Continues" in sample or "Continue »" in sample:
+        return False
+    if any(phrase in sample for phrase in _INLINE_AD_PHRASES):
+        return False
+    if any(pattern.search(sample) for pattern in _INLINE_AD_BLOCK_PATTERNS):
+        return False
+    if _AD_TECH_PATTERN.search(sample):
+        return False
+    normalized_lines = sample.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    previous_line: str | None = None
+    for raw_line in normalized_lines:
+        normalized_line = _normalize_line_whitespace(raw_line)
+        stripped_line = _strip_transcript_speaker_prefix(normalized_line)
+        if stripped_line != normalized_line:
+            return False
+        if not stripped_line:
+            continue
+        if _evaluate_line_noise(stripped_line).drop:
+            return False
+        if previous_line is not None and stripped_line == previous_line:
+            return False
+        previous_line = stripped_line
+    return True
 
 
 def _remove_known_advertisement_spans(text: str) -> str:
