@@ -95,6 +95,35 @@ _PROMO_OFFER_KEYWORDS = (
     "partner content",
     "stock advisor",
 )
+_UI_CONTROL_PATTERNS = [
+    re.compile(r"^(?:show|view|see)\s+(?:more|less|all|details)\.?$", re.IGNORECASE),
+    re.compile(r"^(?:expand|collapse)\s+(?:all|section|details)?\.?$", re.IGNORECASE),
+    re.compile(r"^(?:read|open)\s+(?:next|article|story)\.?$", re.IGNORECASE),
+    re.compile(r"^(?:next|previous)\s*(?:article|story|page)?\.?$", re.IGNORECASE),
+    re.compile(r"^(?:back to top|jump to content)\.?$", re.IGNORECASE),
+    re.compile(r"^(?:share|copy link|print|save|bookmark)\.?$", re.IGNORECASE),
+    re.compile(r"^(?:menu|open menu|close menu)\.?$", re.IGNORECASE),
+    re.compile(r"^(?:watchlist|add to watchlist|remove from watchlist)\.?$", re.IGNORECASE),
+    re.compile(r"^(?:follow|unfollow)\s*(?:ticker|topic|author)?\.?$", re.IGNORECASE),
+    re.compile(r"^(?:enable|disable)\s+notifications\.?$", re.IGNORECASE),
+    re.compile(r"^(?:log in|login|sign in|sign out|logout)\.?$", re.IGNORECASE),
+    re.compile(r"^(?:load more comments|view comments|hide comments)\.?$", re.IGNORECASE),
+]
+_UI_CHROME_KEYWORDS = (
+    "toggle",
+    "dropdown",
+    "accordion",
+    "breadcrumb",
+    "pagination",
+    "page 1 of",
+    "page 2 of",
+    "sort by",
+    "filter by",
+    "apply filter",
+    "clear filter",
+    "showing ",
+    "results",
+)
 _INLINE_AD_BLOCK_PATTERNS = [
     re.compile(
         r"Will AI create the world.?s first trillionaire\?.*?Continue\s*\u00bb",
@@ -315,10 +344,14 @@ def _evaluate_line_noise(line: str) -> CleaningLineDecision:
     promo_score, promo_reasons = _score_promotional_line(line)
     score += promo_score
     reasons.extend(promo_reasons)
+    ui_score, ui_reasons = _score_ui_control_line(line)
+    score += ui_score
+    reasons.extend(ui_reasons)
 
     has_explicit_noise_signal = bool(
         matched_boilerplate
         or promo_score > 0
+        or ui_score > 0
         or _AD_TECH_PATTERN.search(compact.lower())
         or _looks_like_table_header(line)
         or _is_transcript_speaker_marker_line(line)
@@ -379,6 +412,35 @@ def _score_promotional_line(line: str) -> tuple[int, list[str]]:
     elif cta_hits == 1 and len(compact) <= 140:
         score += 1
         reasons.append("single_cta_short_line")
+
+    return score, reasons
+
+
+def _score_ui_control_line(line: str) -> tuple[int, list[str]]:
+    compact = line.strip()
+    if not compact:
+        return 0, []
+    lowered = compact.lower()
+    score = 0
+    reasons: list[str] = []
+
+    if any(pattern.match(compact) for pattern in _UI_CONTROL_PATTERNS):
+        score += 4
+        reasons.append("ui_control_phrase")
+
+    chrome_hits = sum(1 for keyword in _UI_CHROME_KEYWORDS if keyword in lowered)
+    if chrome_hits >= 2 and len(compact) <= 160:
+        score += 3
+        reasons.append("ui_chrome_keywords")
+    elif chrome_hits >= 1 and len(compact) <= 80:
+        score += 2
+        reasons.append("short_ui_chrome_keyword")
+
+    word_count = len(compact.split())
+    has_sentence_end = bool(_SENTENCE_END_PATTERN.search(compact))
+    if word_count <= 4 and not has_sentence_end and len(compact) <= 40:
+        score += 1
+        reasons.append("short_button_like_label")
 
     return score, reasons
 

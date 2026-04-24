@@ -212,3 +212,20 @@ def test_clean_article_text_removes_inline_buy_time_prompt_block() -> None:
     assert "Access our full analysis report here" not in cleaned
     assert "Nvidia beat earnings expectations for the quarter." in cleaned
     assert "The company also raised guidance." in cleaned
+
+
+def test_clean_article_text_removes_ui_control_lines() -> None:
+    raw_text = (
+        "Revenue rose 8% and operating margin improved.\n"
+        "Show more\n"
+        "Sort by: Most recent results\n"
+        "Add to watchlist\n"
+        "Management reiterated full-year guidance."
+    )
+    cleaned = clean_article_text(raw_text)
+
+    assert "Show more" not in cleaned
+    assert "Sort by: Most recent results" not in cleaned
+    assert "Add to watchlist" not in cleaned
+    assert "Revenue rose 8% and operating margin improved." in cleaned
+    assert "Management reiterated full-year guidance." in cleaned
