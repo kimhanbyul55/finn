@@ -105,9 +105,15 @@ def build_chunk_sentiment_result(
     weight: float,
     probabilities: SentimentProbabilities,
     source: SentimentChunkSource = SentimentChunkSource.BODY,
+    positive_score_threshold: float = 8.0,
+    negative_score_threshold: float = -8.0,
 ) -> ChunkSentimentResult:
     """Convert raw class probabilities into a chunk-level sentiment result."""
-    label = _determine_label(probabilities)
+    label = _determine_label(
+        probabilities,
+        positive_score_threshold=positive_score_threshold,
+        negative_score_threshold=negative_score_threshold,
+    )
     confidence = round(
         max(probabilities.positive, probabilities.neutral, probabilities.negative),
         4,
@@ -130,6 +136,8 @@ def aggregate_chunk_results(
     chunk_results: list[ChunkSentimentResult],
     *,
     strategy: AggregationStrategy = AggregationStrategy.WEIGHTED_MEAN,
+    positive_score_threshold: float = 8.0,
+    negative_score_threshold: float = -8.0,
 ) -> SentimentResult:
     """Aggregate chunk-level sentiment into one article-level result."""
     if not chunk_results:
@@ -170,7 +178,11 @@ def aggregate_chunk_results(
         neutral=round(neutral / total_probability, 6),
         negative=round(negative / total_probability, 6),
     )
-    label = _determine_label(probabilities)
+    label = _determine_label(
+        probabilities,
+        positive_score_threshold=positive_score_threshold,
+        negative_score_threshold=negative_score_threshold,
+    )
     confidence = round(
         max(probabilities.positive, probabilities.neutral, probabilities.negative),
         4,
@@ -309,13 +321,34 @@ def _default_chunk_weight(*, chunk_text: str, position: int) -> float:
     return max(0.55, length_factor - position_penalty)
 
 
-def _determine_label(probabilities: SentimentProbabilities) -> FinBERTSentimentLabel:
-    scored = {
-        FinBERTSentimentLabel.POSITIVE: probabilities.positive,
-        FinBERTSentimentLabel.NEUTRAL: probabilities.neutral,
-        FinBERTSentimentLabel.NEGATIVE: probabilities.negative,
-    }
-    return max(scored, key=scored.get)
+def _determine_label(
+    probabilities: SentimentProbabilities,
+    *,
+    positive_score_threshold: float,
+    negative_score_threshold: float,
+) -> FinBERTSentimentLabel:
+    positive_threshold, negative_threshold = _normalize_score_thresholds(
+        positive_score_threshold=positive_score_threshold,
+        negative_score_threshold=negative_score_threshold,
+    )
+    score = (probabilities.positive - probabilities.negative) * 100.0
+    if score >= positive_threshold:
+        return FinBERTSentimentLabel.POSITIVE
+    if score <= negative_threshold:
+        return FinBERTSentimentLabel.NEGATIVE
+    return FinBERTSentimentLabel.NEUTRAL
+
+
+def _normalize_score_thresholds(
+    *,
+    positive_score_threshold: float,
+    negative_score_threshold: float,
+) -> tuple[float, float]:
+    positive = max(0.0, float(positive_score_threshold))
+    negative = min(0.0, float(negative_score_threshold))
+    if positive <= negative:
+        return 8.0, -8.0
+    return positive, negative
 
 
 def _normalize_text(text: str) -> str:

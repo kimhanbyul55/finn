@@ -8,6 +8,7 @@ from typing import Final
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
+from app.core import get_settings
 from app.schemas.sentiment import (
     AggregationStrategy,
     FinBERTSentimentLabel,
@@ -61,6 +62,7 @@ def analyze_sentiment(
     aggregation_strategy: AggregationStrategy = AggregationStrategy.WEIGHTED_MEAN,
 ) -> SentimentResult:
     """Run FinBERT sentiment analysis on title-aware article text."""
+    settings = get_settings()
     cleaned_text = clean_article_text(article_text)
     if not cleaned_text:
         return SentimentResult(
@@ -85,10 +87,14 @@ def analyze_sentiment(
         tokenizer=tokenizer,
         model=model,
         max_chunk_tokens=max_chunk_tokens,
+        positive_score_threshold=settings.sentiment_positive_score_threshold,
+        negative_score_threshold=settings.sentiment_negative_score_threshold,
     )
     return aggregate_chunk_results(
         chunk_results,
         strategy=aggregation_strategy,
+        positive_score_threshold=settings.sentiment_positive_score_threshold,
+        negative_score_threshold=settings.sentiment_negative_score_threshold,
     )
 
 
@@ -196,6 +202,8 @@ def _predict_chunks(
     model,
     *,
     max_chunk_tokens: int,
+    positive_score_threshold: float,
+    negative_score_threshold: float,
 ) -> list:
     title_text = title.strip()
     body_chunks = chunk_article_text(
@@ -221,6 +229,8 @@ def _predict_chunks(
                 token_count=_count_tokens(text=title_text, tokenizer=tokenizer),
                 weight=TITLE_WEIGHT,
                 probabilities=title_probabilities,
+                positive_score_threshold=positive_score_threshold,
+                negative_score_threshold=negative_score_threshold,
             )
         )
 
@@ -239,6 +249,8 @@ def _predict_chunks(
                 token_count=chunk.token_count,
                 weight=chunk.weight,
                 probabilities=probabilities,
+                positive_score_threshold=positive_score_threshold,
+                negative_score_threshold=negative_score_threshold,
             )
         )
 
