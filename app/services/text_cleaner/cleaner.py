@@ -147,6 +147,71 @@ _UI_CHROME_KEYWORDS = (
     "52-week range",
     "volume",
 )
+_KEYWORD_FAMILY_PHRASES: dict[str, tuple[str, ...]] = {
+    "recommendation": (
+        "related",
+        "recommended",
+        "you may also like",
+        "more from",
+        "continue reading",
+    ),
+    "subscription": (
+        "subscribe",
+        "sign up",
+        "join now",
+        "premium",
+        "membership",
+        "free trial",
+        "unlock",
+        "paywall",
+    ),
+    "advertising": (
+        "advertisement",
+        "sponsored",
+        "promoted",
+        "partner content",
+        "paid content",
+        "affiliate",
+    ),
+    "media_credit": (
+        "image source",
+        "photo by",
+        "getty images",
+        "ap photo",
+        "source",
+    ),
+    "social_app": (
+        "follow us",
+        "download app",
+        "watch now",
+        "watch live",
+        "share this article",
+    ),
+    "legal_footer": (
+        "terms",
+        "privacy",
+        "cookie",
+        "all rights reserved",
+        "do not sell my information",
+        "do not sell my personal information",
+    ),
+    "market_widget": (
+        "as of",
+        "market open",
+        "previous close",
+        "52 week range",
+        "volume",
+    ),
+}
+_KEYWORD_FAMILY_SCORE = {
+    "recommendation": 2,
+    "subscription": 3,
+    "advertising": 3,
+    "media_credit": 2,
+    "social_app": 2,
+    "legal_footer": 2,
+    "market_widget": 2,
+}
 _INLINE_AD_BLOCK_PATTERNS = [
     re.compile(
         r"Will AI create the world.?s first trillionaire\?.*?Continue\s*\u00bb",
@@ -370,11 +435,15 @@ def _evaluate_line_noise(line: str) -> CleaningLineDecision:
     ui_score, ui_reasons = _score_ui_control_line(line)
     score += ui_score
     reasons.extend(ui_reasons)
+    family_score, family_reasons = _score_keyword_family_hits(line)
+    score += family_score
+    reasons.extend(family_reasons)
 
     has_explicit_noise_signal = bool(
         matched_boilerplate
         or promo_score > 0
         or ui_score > 0
+        or family_score > 0
         or _AD_TECH_PATTERN.search(compact.lower())
         or _looks_like_table_header(line)
         or _is_transcript_speaker_marker_line(line)
@@ -465,6 +534,41 @@ def _score_ui_control_line(line: str) -> tuple[int, list[str]]:
         score += 1
         reasons.append("short_button_like_label")
 
+    return score, reasons
+
+
+def _tokenize_for_keyword_matching(text: str) -> set[str]:
+    normalized = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+    if not normalized:
+        return set()
+    return set(token for token in normalized.split() if token)
+
+
+def _phrase_matches_tokens(phrase: str, tokens: set[str]) -> bool:
+    phrase_tokens = _tokenize_for_keyword_matching(phrase)
+    if not phrase_tokens:
+        return False
+    return phrase_tokens.issubset(tokens)
+
+
+def _score_keyword_family_hits(line: str) -> tuple[int, list[str]]:
+    tokens = _tokenize_for_keyword_matching(line)
+    if not tokens:
+        return 0, []
+
+    score = 0
+    reasons: list[str] = []
+    for family, phrases in _KEYWORD_FAMILY_PHRASES.items():
+        hits = sum(1 for phrase in phrases if _phrase_matches_tokens(phrase, tokens))
+        if hits <= 0:
+            continue
+        family_score = _KEYWORD_FAMILY_SCORE.get(family, 2)
+        if hits >= 2:
+            family_score += 1
+            reasons.append(f"{family}_multi_hit")
+        else:
+            reasons.append(f"{family}_hit")
+        score += family_score
     return score, reasons
 
 

@@ -265,3 +265,18 @@ def test_clean_article_text_removes_market_widget_and_footer_lines() -> None:
     assert "Volume" not in cleaned
     assert "Do not sell my personal information" not in cleaned
     assert "The company maintained full-year guidance." in cleaned
+
+
+def test_clean_article_text_removes_variant_keyword_noise_with_punctuation() -> None:
+    raw_text = (
+        "Revenue rose 11% year over year.\n"
+        "You-may-also-like: More from Yahoo Finance!\n"
+        "SIGN UP now for premium membership.\n"
+        "Operating income increased in the quarter."
+    )
+    cleaned = clean_article_text(raw_text)
+
+    assert "You-may-also-like" not in cleaned
+    assert "SIGN UP now for premium membership." not in cleaned
+    assert "Revenue rose 11% year over year." in cleaned
+    assert "Operating income increased in the quarter." in cleaned
