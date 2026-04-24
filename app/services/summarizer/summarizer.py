@@ -72,7 +72,10 @@ def summarize_to_three_lines_result(title: str, article_text: str) -> SummaryGen
 def _resolve_summary_input_text(article_text: str) -> str:
     if is_probably_clean_text(article_text):
         return article_text.strip()
-    return clean_article_text(article_text)
+    cleaned = clean_article_text(article_text)
+    if cleaned.strip():
+        return cleaned
+    return (article_text or "").strip()
 
 
 def _summarize_with_gemini(*, title: str, article_text: str) -> tuple[list[str], str | None] | None:

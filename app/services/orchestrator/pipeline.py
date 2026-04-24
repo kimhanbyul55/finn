@@ -270,41 +270,50 @@ class EnrichmentOrchestrator:
         tracker: PipelineStatusTracker,
     ) -> tuple[str, bool]:
         tracker.start(PipelineStageName.CLEAN)
+        original_text = (fetch_result.raw_text or fetch_result.cleaned_text or "").strip()
         try:
             cleaned_text = clean_article_text(fetch_result.raw_text or fetch_result.cleaned_text)
         except Exception as exc:
             log_event(
                 logger,
-                logging.ERROR,
+                logging.WARNING,
                 "text_clean_failed",
                 error=str(exc),
             )
-            tracker.fail(
+            cleaned_text = original_text
+            tracker.complete(
                 PipelineStageName.CLEAN,
-                f"Text cleaning failed: {exc}",
-                fatal=True,
+                "Text cleaning failed; preserved original article text.",
             )
-            tracker.skip(
-                PipelineStageName.VALIDATE,
-                "Skipped because text cleaning failed.",
+
+        if not cleaned_text.strip() and original_text:
+            log_event(
+                logger,
+                logging.WARNING,
+                "text_clean_empty_fallback_to_original",
+                cleaned_text_length=0,
+                original_text_length=len(original_text),
             )
-            self._skip_after_validation_failure(tracker)
-            return "", False
+            cleaned_text = original_text
+            tracker.complete(
+                PipelineStageName.CLEAN,
+                "Text cleaning removed too much; preserved original article text.",
+            )
 
         if not cleaned_text.strip():
             log_event(
                 logger,
                 logging.INFO,
                 "text_clean_filtered",
-                error="Text cleaning produced no usable article text.",
+                error="No usable article text was provided.",
             )
             tracker.filter(
                 PipelineStageName.CLEAN,
-                "Text cleaning produced no usable article text.",
+                "No usable article text was provided.",
             )
             tracker.skip(
                 PipelineStageName.VALIDATE,
-                "Skipped because text cleaning filtered out the article text.",
+                "Skipped because no article text was available.",
             )
             self._skip_after_validation_failure(tracker)
             return "", False
@@ -325,18 +334,20 @@ class EnrichmentOrchestrator:
         if not validation.is_valid:
             log_event(
                 logger,
-                logging.INFO,
-                "text_validate_filtered",
+                logging.WARNING,
+                "text_validate_bypassed",
                 reason=validation.reason,
                 word_count=validation.word_count,
                 character_count=validation.character_count,
             )
-            tracker.filter(
+            tracker.complete(
                 PipelineStageName.VALIDATE,
-                validation.reason or "Article text validation failed.",
+                (
+                    "Strict validation failed, but text was preserved to avoid dropping article content. "
+                    f"reason={validation.reason or 'unknown'}"
+                ),
             )
-            self._skip_after_validation_failure(tracker)
-            return cleaned_text, False
+            return cleaned_text, True
 
         log_event(
             logger,

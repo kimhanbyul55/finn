@@ -565,7 +565,7 @@ def test_orchestrator_keeps_xai_when_summary_generation_fails(monkeypatch) -> No
     )
 
 
-def test_orchestrator_marks_empty_clean_output_as_filtered(monkeypatch) -> None:
+def test_orchestrator_preserves_original_text_when_clean_result_is_empty(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.orchestrator.pipeline.clean_article_text",
         lambda text: "   ",
@@ -585,16 +585,16 @@ def test_orchestrator_marks_empty_clean_output_as_filtered(monkeypatch) -> None:
         article_text="raw text that gets filtered",
     )
 
-    assert payload.analysis_status == AnalysisStatus.CLEAN_FILTERED
-    assert payload.analysis_outcome == AnalysisOutcome.FILTERED
-    assert payload.errors == []
+    assert payload.analysis_status != AnalysisStatus.CLEAN_FILTERED
+    assert payload.analysis_outcome != AnalysisOutcome.FILTERED
+    assert payload.cleaned_text_available is True
     assert any(
-        stage.stage.value == "clean" and stage.status.value == "filtered"
+        stage.stage.value == "clean" and stage.status.value == "completed"
         for stage in payload.stage_statuses
     )
 
 
-def test_orchestrator_marks_invalid_text_as_filtered(monkeypatch) -> None:
+def test_orchestrator_bypasses_strict_validate_filter_to_preserve_article(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.orchestrator.pipeline.clean_article_text",
         lambda text: "short cleaned text",
@@ -623,10 +623,9 @@ def test_orchestrator_marks_invalid_text_as_filtered(monkeypatch) -> None:
         article_text="short text",
     )
 
-    assert payload.analysis_status == AnalysisStatus.VALIDATE_FILTERED
-    assert payload.analysis_outcome == AnalysisOutcome.FILTERED
-    assert payload.errors == []
+    assert payload.analysis_status != AnalysisStatus.VALIDATE_FILTERED
+    assert payload.analysis_outcome != AnalysisOutcome.FILTERED
     assert any(
-        stage.stage.value == "validate" and stage.status.value == "filtered"
+        stage.stage.value == "validate" and stage.status.value == "completed"
         for stage in payload.stage_statuses
     )
