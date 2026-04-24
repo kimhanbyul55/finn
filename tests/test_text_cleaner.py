@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from app.services.text_cleaner import clean_article_text, validate_article_text
+from app.services.text_cleaner import (
+    clean_article_text,
+    explain_cleaning_decisions,
+    validate_article_text,
+)
 
 
 def test_validate_article_text_allows_ten_character_input() -> None:
@@ -165,3 +169,46 @@ def test_clean_article_text_removes_image_source_and_story_continues_noise() -> 
     assert "Image source: Getty Images." not in cleaned
     assert "Story continues" not in cleaned
     assert "Operating margin improved while revenue beat expectations." in cleaned
+
+
+def test_explain_cleaning_decisions_returns_drop_reasons_for_promotional_line() -> None:
+    raw_text = (
+        "Revenue rose 10% year over year.\n"
+        "Sign up for our premium newsletter and read more market insights."
+    )
+    decisions = explain_cleaning_decisions(raw_text)
+    promo = [item for item in decisions if "premium newsletter" in item.line.lower()][0]
+
+    assert promo.drop is True
+    assert promo.score >= 3
+    assert any(
+        reason in promo.reasons
+        for reason in ("multi_cta_keywords", "cta_plus_offer", "known_boilerplate")
+    )
+
+
+def test_clean_article_text_removes_known_yahoo_advertisement_blocks() -> None:
+    raw_text = (
+        "Revenue rose 12% year over year.\n"
+        "Will AI create the world's first trillionaire? Our team just released a report. Continue »\n"
+        "Management raised full-year guidance."
+    )
+    cleaned = clean_article_text(raw_text)
+
+    assert "trillionaire" not in cleaned.lower()
+    assert "Continue »" not in cleaned
+    assert "Revenue rose 12% year over year." in cleaned
+    assert "Management raised full-year guidance." in cleaned
+
+
+def test_clean_article_text_removes_inline_buy_time_prompt_block() -> None:
+    raw_text = (
+        "Nvidia beat earnings expectations for the quarter. "
+        "Is now the time to buy Nvidia? Access our full analysis report here, it's free. "
+        "The company also raised guidance."
+    )
+    cleaned = clean_article_text(raw_text)
+
+    assert "Access our full analysis report here" not in cleaned
+    assert "Nvidia beat earnings expectations for the quarter." in cleaned
+    assert "The company also raised guidance." in cleaned

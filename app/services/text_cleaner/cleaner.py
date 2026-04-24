@@ -95,6 +95,50 @@ _PROMO_OFFER_KEYWORDS = (
     "partner content",
     "stock advisor",
 )
+_INLINE_AD_BLOCK_PATTERNS = [
+    re.compile(
+        r"Will AI create the world.?s first trillionaire\?.*?Continue\s*\u00bb",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"WHILE YOU.?RE HERE:.*?Claim The Stock Ticker.*?(?:FREE|HERE)\.?",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"The Next Palantir\?.*?(?:FREE|HERE|radar)\.?",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"If you missed Palantir.*?(?:FREE|HERE)\.?",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"Is now the time to buy .{1,80}?\? Access our full analysis(?: report)? here[^.]*\.",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"Image source:\s*[^\.\n]{1,120}\.",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"Get All \d+ Stocks Here for FREE\.?",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"Claim The Stock Ticker[^.]*\.",
+        re.IGNORECASE | re.DOTALL,
+    ),
+]
+_INLINE_AD_PHRASES = (
+    "Story Continues",
+    "Continue \u00bb",
+    "Our team just released a report",
+    "Access our full analysis report here, it's free.",
+    "Access our full analysis report here.",
+    "This stock is still flying under the radar.",
+    "Different technology.",
+    "WHILE YOU'RE HERE:",
+)
 
 
 class ArticleTextValidationStatus(str, Enum):
@@ -114,6 +158,17 @@ class ArticleTextValidationResult:
     character_count: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class CleaningLineDecision:
+    line: str
+    drop: bool
+    score: int
+    reasons: tuple[str, ...]
+
+
+_NOISE_DROP_SCORE_THRESHOLD = 3
+
+
 def clean_article_text(raw_text: str) -> str:
     """Clean article text conservatively without removing likely financial content."""
     if not raw_text:
@@ -122,6 +177,7 @@ def clean_article_text(raw_text: str) -> str:
     text = html.unescape(raw_text)
     text = _HTML_SCRIPT_STYLE_PATTERN.sub("\n", text)
     text = _HTML_TAG_PATTERN.sub(" ", text)
+    text = _remove_known_advertisement_spans(text)
     text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\u000c", "\n")
     lines = text.split("\n")
 
@@ -131,7 +187,8 @@ def clean_article_text(raw_text: str) -> str:
         normalized_line = _strip_transcript_speaker_prefix(normalized_line)
         if not normalized_line:
             continue
-        if _is_safe_boilerplate_line(normalized_line):
+        decision = _evaluate_line_noise(normalized_line)
+        if decision.drop:
             continue
         if cleaned_lines and normalized_line == cleaned_lines[-1]:
             continue
@@ -189,26 +246,96 @@ def is_article_text_usable(text: str) -> bool:
     return validate_article_text(text).is_valid
 
 
+def explain_cleaning_decisions(raw_text: str) -> list[CleaningLineDecision]:
+    if not raw_text:
+        return []
+    text = html.unescape(raw_text)
+    text = _HTML_SCRIPT_STYLE_PATTERN.sub("\n", text)
+    text = _HTML_TAG_PATTERN.sub(" ", text)
+    text = _remove_known_advertisement_spans(text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\u000c", "\n")
+    decisions: list[CleaningLineDecision] = []
+    for line in text.split("\n"):
+        normalized_line = _strip_transcript_speaker_prefix(_normalize_line_whitespace(line))
+        if not normalized_line:
+            continue
+        decisions.append(_evaluate_line_noise(normalized_line))
+    return decisions
+
+
 def _normalize_line_whitespace(line: str) -> str:
     normalized = _INTERNAL_WHITESPACE_PATTERN.sub(" ", line.strip())
     normalized = _DATELINE_PREFIX_PATTERN.sub("", normalized)
     return normalized
 
 
+def _remove_known_advertisement_spans(text: str) -> str:
+    normalized = text
+    for pattern in _INLINE_AD_BLOCK_PATTERNS:
+        normalized = pattern.sub(" ", normalized)
+    for phrase in _INLINE_AD_PHRASES:
+        normalized = normalized.replace(phrase, " ")
+    return normalized
+
+
 def _is_safe_boilerplate_line(line: str) -> bool:
+    return _evaluate_line_noise(line).drop
+
+
+def _evaluate_line_noise(line: str) -> CleaningLineDecision:
+    compact = line.strip()
+    if not compact:
+        return CleaningLineDecision(line=line, drop=True, score=99, reasons=("empty",))
+
+    score = 0
+    reasons: list[str] = []
+
     if _SEPARATOR_LINE_PATTERN.match(line):
-        return True
+        score += 4
+        reasons.append("separator_line")
     if _URL_ONLY_LINE_PATTERN.match(line):
-        return True
+        score += 4
+        reasons.append("url_only")
     if _TRANSCRIPT_CUE_PATTERN.match(line.strip()):
-        return True
+        score += 4
+        reasons.append("transcript_cue")
     if _is_transcript_speaker_marker_line(line):
-        return True
+        score += 4
+        reasons.append("speaker_marker")
+
+    matched_boilerplate = any(pattern.match(line) for pattern in _BOILERPLATE_LINE_PATTERNS)
+    if matched_boilerplate:
+        score += 4
+        reasons.append("known_boilerplate")
+
     if _looks_like_table_header(line):
-        return True
-    if _looks_like_promotional_cta_line(line):
-        return True
-    return any(pattern.match(line) for pattern in _BOILERPLATE_LINE_PATTERNS)
+        score += 3
+        reasons.append("table_like")
+
+    promo_score, promo_reasons = _score_promotional_line(line)
+    score += promo_score
+    reasons.extend(promo_reasons)
+
+    has_explicit_noise_signal = bool(
+        matched_boilerplate
+        or promo_score > 0
+        or _AD_TECH_PATTERN.search(compact.lower())
+        or _looks_like_table_header(line)
+        or _is_transcript_speaker_marker_line(line)
+        or _TRANSCRIPT_CUE_PATTERN.match(line.strip())
+        or _URL_ONLY_LINE_PATTERN.match(line)
+        or _SEPARATOR_LINE_PATTERN.match(line)
+    )
+    if _looks_like_narrative_line(compact) and not has_explicit_noise_signal:
+        score -= 2
+        reasons.append("narrative_bonus")
+
+    return CleaningLineDecision(
+        line=line,
+        drop=score >= _NOISE_DROP_SCORE_THRESHOLD,
+        score=score,
+        reasons=tuple(reasons),
+    )
 
 
 def _strip_transcript_speaker_prefix(line: str) -> str:
@@ -227,25 +354,33 @@ def _is_transcript_speaker_marker_line(line: str) -> bool:
     return not content
 
 
-def _looks_like_promotional_cta_line(line: str) -> bool:
+def _score_promotional_line(line: str) -> tuple[int, list[str]]:
     compact = line.strip()
     if not compact:
-        return False
+        return 0, []
     lowered = compact.lower()
+    score = 0
+    reasons: list[str] = []
     if _AD_TECH_PATTERN.search(lowered):
-        return True
+        score += 4
+        reasons.append("ad_tech_marker")
 
     cta_hits = sum(1 for keyword in _PROMO_CTA_KEYWORDS if keyword in lowered)
     offer_hits = sum(1 for keyword in _PROMO_OFFER_KEYWORDS if keyword in lowered)
     if cta_hits >= 2 and len(compact) <= 200:
-        return True
-    if cta_hits >= 1 and offer_hits >= 1 and len(compact) <= 220:
-        return True
-    if offer_hits >= 2 and len(compact) <= 180:
-        return True
-    if _looks_like_narrative_line(compact):
-        return False
-    return False
+        score += 3
+        reasons.append("multi_cta_keywords")
+    elif cta_hits >= 1 and offer_hits >= 1 and len(compact) <= 220:
+        score += 3
+        reasons.append("cta_plus_offer")
+    elif offer_hits >= 2 and len(compact) <= 180:
+        score += 3
+        reasons.append("multi_offer_keywords")
+    elif cta_hits == 1 and len(compact) <= 140:
+        score += 1
+        reasons.append("single_cta_short_line")
+
+    return score, reasons
 
 
 def _looks_like_table_header(line: str) -> bool:
