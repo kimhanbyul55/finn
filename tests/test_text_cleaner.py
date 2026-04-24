@@ -229,3 +229,39 @@ def test_clean_article_text_removes_ui_control_lines() -> None:
     assert "Add to watchlist" not in cleaned
     assert "Revenue rose 8% and operating margin improved." in cleaned
     assert "Management reiterated full-year guidance." in cleaned
+
+
+def test_clean_article_text_removes_more_from_and_you_may_also_like_lines() -> None:
+    raw_text = (
+        "Revenue rose 9% year over year.\n"
+        "You may also like\n"
+        "More from Yahoo Finance\n"
+        "Operating profit improved in the quarter."
+    )
+    cleaned = clean_article_text(raw_text)
+
+    assert "You may also like" not in cleaned
+    assert "More from Yahoo Finance" not in cleaned
+    assert "Revenue rose 9% year over year." in cleaned
+    assert "Operating profit improved in the quarter." in cleaned
+
+
+def test_clean_article_text_removes_market_widget_and_footer_lines() -> None:
+    raw_text = (
+        "As of 4:00 PM EDT\n"
+        "Market open\n"
+        "Previous close\n"
+        "52-week range\n"
+        "Volume\n"
+        "Do not sell my personal information\n"
+        "The company maintained full-year guidance."
+    )
+    cleaned = clean_article_text(raw_text)
+
+    assert "As of 4:00 PM EDT" not in cleaned
+    assert "Market open" not in cleaned
+    assert "Previous close" not in cleaned
+    assert "52-week range" not in cleaned
+    assert "Volume" not in cleaned
+    assert "Do not sell my personal information" not in cleaned
+    assert "The company maintained full-year guidance." in cleaned
