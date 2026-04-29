@@ -157,6 +157,7 @@ def build_api_enrichment_response(
         stage_statuses=[_map_stage_status(stage) for stage in payload.stage_statuses],
         stage_io_metrics=[_map_stage_io_metric(item) for item in payload.stage_io_metrics],
         alert_decision=_build_alert_decision(api_sentiment),
+        news_power_score=_build_news_power_score(api_sentiment),
     )
 
 
@@ -454,3 +455,9 @@ def _build_alert_decision(sentiment: SentimentResult | None) -> AlertDecision:
         reason_code="sentiment_mixed_filtered",
         reason="Mixed sentiment is excluded in sentiment-only alert mode.",
     )
+
+
+def _build_news_power_score(sentiment: SentimentResult | None) -> float | None:
+    if sentiment is None:
+        return None
+    return round(abs(sentiment.score) * sentiment.confidence, 4)

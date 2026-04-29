@@ -474,6 +474,12 @@ class ArticleEnrichmentResponse(SchemaModel):
         default=None,
         description="Alert policy decision derived from sentiment and runtime settings.",
     )
+    news_power_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Ranking score for surfacing stronger sentiment news first.",
+    )
 
     @field_validator("summary_3lines", mode="before")
     @classmethod

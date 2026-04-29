@@ -92,3 +92,19 @@ def test_alert_decision_sentiment_only_allows_bullish_bearish(monkeypatch) -> No
     assert bearish.should_send is True
     assert bearish.reason_code == "sentiment_label_allowed"
 
+
+def test_news_power_score_uses_absolute_sentiment_and_confidence() -> None:
+    positive = enrichment_service_module._build_news_power_score(
+        SentimentResult(label=SentimentLabel.BULLISH, score=0.8, confidence=0.75)
+    )
+    negative = enrichment_service_module._build_news_power_score(
+        SentimentResult(label=SentimentLabel.BEARISH, score=-0.8, confidence=0.75)
+    )
+    neutral = enrichment_service_module._build_news_power_score(
+        SentimentResult(label=SentimentLabel.NEUTRAL, score=0.05, confidence=0.6)
+    )
+
+    assert positive == 0.6
+    assert negative == 0.6
+    assert neutral == 0.03
+    assert enrichment_service_module._build_news_power_score(None) is None
