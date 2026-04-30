@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from app.services.summarizer.summarizer import _cached_summary_completion
 from app.services.summarizer import summarize_to_three_lines
 from app.services.summarizer.summarizer import _prepare_summary_input
-from app.services.summarizer.summarizer import _cached_summary_completion
 
 
 def test_summarizer_uses_Gemini_when_configured(monkeypatch) -> None:
@@ -48,6 +48,47 @@ def test_summarizer_uses_Gemini_when_configured(monkeypatch) -> None:
         "회사는 수요 강세와 마진 개선을 강조했습니다.",
         "투자자들은 향후 가이던스 유지 여부를 주목하고 있습니다.",
     ]
+
+
+def test_summarizer_prompt_defines_three_line_roles(monkeypatch) -> None:
+    _cached_summary_completion.cache_clear()
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    captured: dict[str, object] = {}
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": (
+                                "매출은 전년 대비 12% 증가했다.\n"
+                                "주가는 실적 발표 이후 상승했다.\n"
+                                "회사는 연간 가이던스를 상향했다."
+                            )}]
+                        }
+                    }
+                ]
+            }
+
+    def _fake_post(*args, **kwargs):
+        captured.update(kwargs.get("json", {}))
+        return _Response()
+
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _fake_post)
+
+    summarize_to_three_lines(
+        title="Company raises outlook after quarterly results",
+        article_text="Revenue rose 12%. Shares rose after earnings. Guidance was raised.",
+    )
+
+    request_text = str(captured)
+    assert "Line 1 must summarize the core event or financial result" in request_text
+    assert "Line 2 must summarize the business, market, or stock-price impact" in request_text
+    assert "Line 3 must summarize guidance, risk, outlook" in request_text
 
 
 def test_summarizer_splits_single_line_Gemini_output_into_three_sentences(monkeypatch) -> None:

@@ -332,3 +332,43 @@ def test_parse_translation_batch_output_accepts_single_line_key_spans() -> None:
     assert parsed["title"] == "애플이 가이던스를 상향했다"
     assert parsed["summary_1"] == "매출은 12% 증가했다"
     assert parsed["summary_2"] == "마진은 개선됐다"
+
+
+def test_translation_prompt_includes_market_phrase_rules(monkeypatch) -> None:
+    _cached_translation_batch_completion.cache_clear()
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    captured: dict[str, object] = {}
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": "title|||애플 주가가 급등했다"}]
+                        }
+                    }
+                ]
+            }
+
+    def _fake_post(*args, **kwargs):
+        captured.update(kwargs.get("json", {}))
+        return _Response()
+
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _fake_post)
+
+    build_localized_content(
+        title="Apple shares jumped",
+        summary_3lines=[],
+        xai=None,
+        sentiment_label=SentimentLabel.BULLISH,
+        tickers=["AAPL"],
+    )
+
+    request_text = str(captured)
+    assert "'shares rose/jumped' to '주가가 상승/급등했다'" in request_text
+    assert "'beat estimates' to '시장 예상치를 상회했다'" in request_text
+    assert "'missed expectations' to '시장 예상치를 밑돌았다'" in request_text

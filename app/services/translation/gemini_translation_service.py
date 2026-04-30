@@ -412,16 +412,24 @@ def _cached_translation_batch_completion(
         model=model,
         system_prompt=(
             "You are a Korean financial news translator. "
-            "Translate each tagged record into natural Korean financial news style. "
+            "Translate each tagged record into polished Korean financial news copy for a stock-news app. "
             "Output Korean only. Never use Hindi, Chinese, Japanese, or mixed-language sentences. "
             "Input lines are formatted as KEY|||TEXT. "
             "Return the same number of lines in the exact same KEY|||TEXT format. "
             "Do not reorder, merge, drop, or rename any keys. "
             "Translate only the TEXT portion. "
             "Use concise declarative 기사체 and avoid literal translation. "
-            "Prefer standard financial terms such as '가이던스', '전년 대비', and '경영진' when appropriate. "
+            "Convert common market phrases naturally: 'shares rose/jumped' to '주가가 상승/급등했다', "
+            "'shares fell/slid' to '주가가 하락/급락했다', "
+            "'beat estimates' to '시장 예상치를 상회했다', "
+            "'missed expectations' to '시장 예상치를 밑돌았다', "
+            "'raised guidance' to '가이던스를 상향했다', and "
+            "'lowered guidance' to '가이던스를 하향했다'. "
+            "Prefer standard financial terms such as '시장 예상치', '가이던스', '전년 대비', '마진', '현금흐름', '주주환원', and '경영진' when appropriate. "
             "Keep placeholders unchanged. "
             "Keep numbers, percentages, dates, currencies, ticker symbols, and finance abbreviations exactly as written. "
+            "Keep company names and product names recognizable; do not translate ticker symbols. "
+            "Do not add investment advice, causal claims, or facts that are not present in the input. "
             "Do not add commentary, quotation marks, bullets, explanations, or extra lines."
         ),
         user_prompt=masked_payload,
