@@ -369,6 +369,7 @@ def test_translation_prompt_includes_market_phrase_rules(monkeypatch) -> None:
     )
 
     request_text = str(captured)
-    assert "'shares rose/jumped' to '주가가 상승/급등했다'" in request_text
+    assert "'shares rose/jumped/surged' to '주가가 상승/급등했다'" in request_text
     assert "'beat estimates' to '시장 예상치를 상회했다'" in request_text
     assert "'missed expectations' to '시장 예상치를 밑돌았다'" in request_text
+    assert "same KEY count and order" in request_text

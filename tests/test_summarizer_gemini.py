@@ -87,8 +87,9 @@ def test_summarizer_prompt_defines_three_line_roles(monkeypatch) -> None:
 
     request_text = str(captured)
     assert "Line 1 must summarize the core event or financial result" in request_text
-    assert "Line 2 must summarize the business, market, or stock-price impact" in request_text
-    assert "Line 3 must summarize guidance, risk, outlook" in request_text
+    assert "Line 2 must summarize the business, market, analyst, or stock-price impact" in request_text
+    assert "Line 3 must summarize guidance, risk, outlook, cash flow, shareholder return" in request_text
+    assert "silently verify: exactly 3 lines" in request_text
 
 
 def test_summarizer_splits_single_line_Gemini_output_into_three_sentences(monkeypatch) -> None:
