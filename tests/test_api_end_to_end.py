@@ -165,6 +165,7 @@ def _build_localized_payload() -> LocalizedArticleContent:
     return LocalizedArticleContent(
         language="ko",
         title="회사가 실적 예상치를 웃돌았다",
+        content="회사는 매출 성장이 예상치를 웃돌았고 경영진은 안정적인 수요를 강조했다.",
         summary_3lines=[
             SummaryLine(line_number=1, text="매출 성장이 예상치를 웃돌았다."),
             SummaryLine(line_number=2, text="경영진은 안정적인 수요를 강조했다."),
@@ -290,6 +291,9 @@ def test_news_result_reuses_stored_localized_payload(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["result"]["localized"]["title"] == "회사가 실적 예상치를 웃돌았다"
+    assert body["result"]["localized"]["content"] == (
+        "회사는 매출 성장이 예상치를 웃돌았고 경영진은 안정적인 수요를 강조했다."
+    )
     assert body["result"]["localized"]["summary_3lines"][0]["text"] == "매출 성장이 예상치를 웃돌았다."
 
 

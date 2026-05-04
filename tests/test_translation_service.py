@@ -105,6 +105,60 @@ def test_build_localized_content_uses_Gemini_when_api_key_present(monkeypatch) -
     assert localized.xai.highlights[0].excerpt == "가이던스가 상향되었습니다."
 
 
+def test_build_localized_content_translates_article_content(monkeypatch) -> None:
+    _cached_translation_batch_completion.cache_clear()
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash-lite")
+
+    captured_payloads: list[str] = []
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": (
+                                "title|||애플이 가이던스를 상향했다\n"
+                                "summary_1|||매출은 12% 증가했다.\n"
+                                "summary_2|||마진은 개선됐다.\n"
+                                "summary_3|||가이던스는 상향됐다.\n"
+                                "content|||애플은 매출이 12% 증가했고 가이던스를 상향했다고 밝혔다."
+                            )}]
+                        }
+                    }
+                ]
+            }
+
+    def _fake_post(*args, **kwargs):
+        captured_payloads.append(kwargs["json"]["contents"][0]["parts"][0]["text"])
+        return _Response()
+
+    monkeypatch.setattr("app.services.gemini.client.requests.post", _fake_post)
+
+    localized = build_localized_content(
+        title="Apple raises guidance",
+        content_text="Apple said revenue grew 12% and guidance was raised.",
+        summary_3lines=[
+            SummaryLine(line_number=1, text="Revenue grew 12%."),
+            SummaryLine(line_number=2, text="Margins improved."),
+            SummaryLine(line_number=3, text="Guidance was raised."),
+        ],
+        xai=None,
+        sentiment_label=SentimentLabel.BULLISH,
+        tickers=["AAPL"],
+    )
+
+    assert "summary_1|||Revenue grew ZXQKEEP0ZXQ." in captured_payloads[0]
+    assert "content|||Apple said revenue grew ZXQKEEP0ZXQ and guidance was raised." in captured_payloads[0]
+    assert localized is not None
+    assert localized.content == "애플은 매출이 12% 증가했고 가이던스를 상향했다고 밝혔다."
+
+
 def test_build_localized_content_returns_none_when_gemini_is_disabled(monkeypatch) -> None:
     _cached_translation_batch_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")

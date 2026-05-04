@@ -64,6 +64,7 @@ def build_enrichment_storage_payload(
     )
     localized = _build_stored_localized_content(
         title=title,
+        content_text=cleaned_text_normalized,
         summary_3lines=normalized_summary,
         sentiment_label=stored_sentiment.label if stored_sentiment is not None else None,
         xai_result=xai_result,
@@ -77,6 +78,7 @@ def build_enrichment_storage_payload(
         errors=aggregated_errors,
         analysis_outcome=analysis_outcome,
         normalized_summary=normalized_summary,
+        cleaned_text_available=bool(cleaned_text_normalized),
         localized=localized,
         sentiment_available=stored_sentiment is not None,
     )
@@ -133,6 +135,7 @@ def _build_cleaned_text_preview(cleaned_text: str) -> str | None:
 def _build_stored_localized_content(
     *,
     title: str,
+    content_text: str | None,
     summary_3lines: list[str],
     sentiment_label: str | None,
     xai_result: XAIResult | None,
@@ -150,6 +153,7 @@ def _build_stored_localized_content(
     localized_sentiment = _map_sentiment_label(sentiment_label, is_mixed=is_mixed)
     return build_localized_content(
         title=title,
+        content_text=content_text,
         summary_3lines=summary_lines,
         xai=_build_localized_xai_payload(xai_result, localized_sentiment),
         sentiment_label=localized_sentiment,
@@ -229,6 +233,7 @@ def _append_payload_warnings(
     errors: list[StoragePayloadError],
     analysis_outcome: AnalysisOutcome,
     normalized_summary: list[str],
+    cleaned_text_available: bool,
     localized: LocalizedArticleContent | None,
     sentiment_available: bool,
 ) -> None:
@@ -259,6 +264,25 @@ def _append_payload_warnings(
                 fatal=False,
             )
         )
+    elif len(localized.summary_3lines) < len(normalized_summary):
+        errors.append(
+            StoragePayloadError(
+                stage=PipelineStageName.BUILD_PAYLOAD,
+                message=(
+                    "Localized payload has fewer translated summary lines than the source summary. "
+                    f"translated={len(localized.summary_3lines)} source={len(normalized_summary)}"
+                ),
+                fatal=False,
+            )
+        )
+    if localized is not None and cleaned_text_available and not (localized.content or "").strip():
+        errors.append(
+            StoragePayloadError(
+                stage=PipelineStageName.BUILD_PAYLOAD,
+                message="Localized payload has no translated article content.",
+                fatal=False,
+            )
+        )
     if not sentiment_available:
         errors.append(
             StoragePayloadError(
@@ -284,6 +308,9 @@ def _log_localization_status(
         analysis_outcome=analysis_outcome.value,
         summary_line_count=summary_line_count,
         localized_present=localized is not None,
+        localized_content_available=(
+            bool((localized.content or "").strip()) if localized is not None else False
+        ),
         localized_summary_line_count=(
             len(localized.summary_3lines) if localized is not None else 0
         ),

@@ -305,6 +305,10 @@ class XAIDisplayPayload(SchemaModel):
 class LocalizedArticleContent(SchemaModel):
     language: str = Field(..., min_length=2, description="Localized display language.")
     title: str = Field(..., min_length=1, description="Localized article title.")
+    content: str | None = Field(
+        default=None,
+        description="Localized article body excerpt for display when available.",
+    )
     summary_3lines: list[SummaryLine] = Field(
         default_factory=list,
         max_length=3,

@@ -72,6 +72,7 @@ class _TranslationTask:
 def build_localized_content(
     *,
     title: str,
+    content_text: str | None = None,
     summary_3lines: list[SummaryLine],
     xai: XAIPayload | None,
     sentiment_label: SentimentLabel | None,
@@ -82,6 +83,7 @@ def build_localized_content(
     limited_xai = _limit_xai_payload(xai, highlight_limit=xai_highlight_limit)
     translations = _translate_localized_payload(
         title=title,
+        content_text=content_text,
         summary_3lines=summary_3lines,
         xai=limited_xai,
         tickers=tickers,
@@ -110,10 +112,12 @@ def build_localized_content(
             )
 
     translated_xai = _translate_xai_payload(limited_xai, translations=translations)
+    translated_content = translations.get("content", "").strip() or None
 
     return LocalizedArticleContent(
         language="ko",
         title=translated_title,
+        content=translated_content,
         summary_3lines=translated_summary,
         xai=translated_xai,
         sentiment_label=_SENTIMENT_LABELS_KO.get(sentiment_label),
@@ -169,12 +173,18 @@ def _translate_xai_payload(payload: XAIPayload | None, *, translations: dict[str
 def _translate_localized_payload(
     *,
     title: str,
+    content_text: str | None,
     summary_3lines: list[SummaryLine],
     xai: XAIPayload | None,
     tickers: list[str] | None,
     allow_gemini: bool,
 ) -> dict[str, str] | None:
-    tasks = _build_translation_tasks(title=title, summary_3lines=summary_3lines, xai=xai)
+    tasks = _build_translation_tasks(
+        title=title,
+        content_text=content_text,
+        summary_3lines=summary_3lines,
+        xai=xai,
+    )
     if not allow_gemini or not gemini_is_enabled():
         return None
 
@@ -188,6 +198,7 @@ def _translate_localized_payload(
 def _build_translation_tasks(
     *,
     title: str,
+    content_text: str | None,
     summary_3lines: list[SummaryLine],
     xai: XAIPayload | None,
 ) -> list[_TranslationTask]:
@@ -196,6 +207,8 @@ def _build_translation_tasks(
         _TranslationTask(key=f"summary_{line.line_number}", text=line.text)
         for line in summary_3lines
     )
+    if content_text and content_text.strip():
+        tasks.append(_TranslationTask(key="content", text=content_text))
     if xai is not None:
         tasks.append(_TranslationTask(key="xai_explanation", text=xai.explanation))
         for index, item in enumerate(xai.highlights, start=1):
@@ -358,23 +371,43 @@ def _is_usable_korean_translation(text: str) -> bool:
 
 def _mask_text(text: str, *, tickers: list[str] | None) -> _MaskedText:
     replacements: dict[str, str] = {}
-    masked = text
-    protected_tokens = sorted(
-        {
-            *(ticker.strip() for ticker in (tickers or []) if ticker and ticker.strip()),
-            *(_FINANCE_TOKEN_PATTERN.findall(text)),
-            *(_NUMBER_PATTERN.findall(text)),
-        },
-        key=len,
-        reverse=True,
-    )
+    token_to_placeholder: dict[str, str] = {}
+    protected_tokens = [
+        token
+        for token in sorted(
+            {
+                *(ticker.strip() for ticker in (tickers or []) if ticker and ticker.strip()),
+                *(_FINANCE_TOKEN_PATTERN.findall(text)),
+                *(_NUMBER_PATTERN.findall(text)),
+            },
+            key=len,
+            reverse=True,
+        )
+        if token
+    ]
+    if not protected_tokens:
+        return _MaskedText(text=text, replacements={})
 
-    for index, token in enumerate(protected_tokens):
-        placeholder = f"ZXQKEEP{index}ZXQ"
-        replacements[placeholder] = token
-        masked = masked.replace(token, placeholder)
+    token_pattern = re.compile("|".join(re.escape(token) for token in protected_tokens))
 
-    return _MaskedText(text=masked, replacements=replacements)
+    def _replace_token(match: re.Match[str]) -> str:
+        token = match.group(0)
+        placeholder = token_to_placeholder.get(token)
+        if placeholder is None:
+            placeholder = f"ZXQKEEP{len(token_to_placeholder)}ZXQ"
+            token_to_placeholder[token] = placeholder
+            replacements[placeholder] = token
+        return placeholder
+
+    masked_lines: list[str] = []
+    for line in text.splitlines():
+        if "|||" not in line:
+            masked_lines.append(token_pattern.sub(_replace_token, line))
+            continue
+        key, payload = line.split("|||", 1)
+        masked_lines.append(f"{key}|||{token_pattern.sub(_replace_token, payload)}")
+
+    return _MaskedText(text="\n".join(masked_lines), replacements=replacements)
 
 
 def _unmask_text(text: str, replacements: dict[str, str]) -> str:
