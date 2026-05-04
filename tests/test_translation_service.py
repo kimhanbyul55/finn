@@ -103,6 +103,8 @@ def test_build_localized_content_uses_Gemini_when_api_key_present(monkeypatch) -
     assert localized.xai is not None
     assert localized.xai.explanation == "강세 판단에 영향을 준 핵심 문장입니다."
     assert localized.xai.highlights[0].excerpt == "가이던스가 상향되었습니다."
+    assert localized.xai.highlights[0].start_char is None
+    assert localized.xai.highlights[0].end_char is None
 
 
 def test_build_localized_content_translates_article_content(monkeypatch) -> None:

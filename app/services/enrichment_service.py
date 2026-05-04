@@ -21,6 +21,7 @@ from app.schemas.enrichment import (
     StageStatus,
     SummaryLine,
     XAIDisplayEvidenceItem,
+    XAIDisplayKeywordSpan,
     XAIDisplayPayload,
     XAIHighlightItem,
     XAIPayload,
@@ -230,11 +231,8 @@ def _build_xai_display_payload(
         evidence=[
             XAIDisplayEvidenceItem(
                 excerpt=highlight.text_snippet,
-                keywords=[
-                    keyword.text_snippet
-                    for keyword in highlight.keyword_spans
-                    if keyword.text_snippet.strip()
-                ][:3],
+                keywords=_build_xai_display_keywords(highlight),
+                keyword_spans=_build_xai_display_keyword_spans(highlight),
                 sentiment_signal=_map_highlight_signal(
                     highlight.contribution_direction,
                     target_label,
@@ -244,6 +242,48 @@ def _build_xai_display_payload(
             for highlight in payload.highlights
         ],
     )
+
+
+def _build_xai_display_keywords(highlight) -> list[str]:
+    return [
+        keyword.text_snippet
+        for keyword in highlight.keyword_spans
+        if keyword.text_snippet.strip()
+    ][:3]
+
+
+def _build_xai_display_keyword_spans(highlight) -> list[XAIDisplayKeywordSpan]:
+    spans: list[XAIDisplayKeywordSpan] = []
+    sentence_start = highlight.start_char
+    for keyword in highlight.keyword_spans[:3]:
+        text = keyword.text_snippet.strip()
+        if not text:
+            continue
+
+        relative_start: int | None = None
+        relative_end: int | None = None
+        if sentence_start is not None:
+            relative_start = keyword.start_char - sentence_start
+            relative_end = keyword.end_char - sentence_start
+            if relative_start < 0 or relative_end < relative_start or relative_end > len(highlight.text_snippet):
+                relative_start = None
+                relative_end = None
+
+        if relative_start is None:
+            local_index = highlight.text_snippet.find(text)
+            if local_index >= 0:
+                relative_start = local_index
+                relative_end = local_index + len(text)
+
+        spans.append(
+            XAIDisplayKeywordSpan(
+                text=text,
+                start_char=relative_start,
+                end_char=relative_end,
+                importance_score=keyword.importance_score,
+            )
+        )
+    return spans
 
 
 def _build_mixed_flags(

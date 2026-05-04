@@ -273,6 +273,36 @@ class XAIPayload(SchemaModel):
     )
 
 
+class XAIDisplayKeywordSpan(SchemaModel):
+    text: str = Field(
+        ...,
+        min_length=1,
+        description="Keyword or short phrase to emphasize inside the evidence sentence.",
+    )
+    start_char: int | None = Field(
+        default=None,
+        ge=0,
+        description="0-based start offset inside the evidence sentence.",
+    )
+    end_char: int | None = Field(
+        default=None,
+        ge=0,
+        description="0-based exclusive end offset inside the evidence sentence.",
+    )
+    importance_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Relative importance score for this keyword span.",
+    )
+
+    @model_validator(mode="after")
+    def validate_offsets(self) -> XAIDisplayKeywordSpan:
+        if self.start_char is not None and self.end_char is not None:
+            if self.end_char < self.start_char:
+                raise ValueError("end_char must be greater than or equal to start_char")
+        return self
+
+
 class XAIDisplayEvidenceItem(SchemaModel):
     excerpt: str = Field(
         ...,
@@ -282,6 +312,10 @@ class XAIDisplayEvidenceItem(SchemaModel):
     keywords: list[str] = Field(
         default_factory=list,
         description="Important keyword or phrase snippets inside the evidence sentence.",
+    )
+    keyword_spans: list[XAIDisplayKeywordSpan] = Field(
+        default_factory=list,
+        description="Frontend-ready keyword spans relative to the evidence sentence.",
     )
     sentiment_signal: SentimentLabel | None = Field(
         default=None,

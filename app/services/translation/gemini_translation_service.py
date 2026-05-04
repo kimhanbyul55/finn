@@ -159,8 +159,8 @@ def _translate_xai_payload(payload: XAIPayload | None, *, translations: dict[str
                 relevance_score=item.relevance_score,
                 explanation=(detail_value if item.explanation and detail_value else None),
                 sentiment_signal=item.sentiment_signal,
-                start_char=item.start_char,
-                end_char=item.end_char,
+                start_char=None,
+                end_char=None,
             )
         )
 

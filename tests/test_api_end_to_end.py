@@ -33,7 +33,7 @@ from app.schemas.storage import (
     EnrichmentStoragePayload,
     build_stored_sentiment_payload,
 )
-from app.schemas.xai import XAIContributionDirection, XAIHighlight, XAIResult
+from app.schemas.xai import XAIContributionDirection, XAIHighlight, XAIKeywordSpan, XAIResult
 from app.services.enrichment_service import EnrichmentService
 from app.services.ingestion_service import IngestionService
 from app.services.job_processing_service import JobProcessingService
@@ -93,7 +93,20 @@ def _build_completed_payload(request: ArticleEnrichmentRequest) -> EnrichmentSto
                     sentence_index=0,
                     start_char=0,
                     end_char=41,
-                    keyword_spans=[],
+                    keyword_spans=[
+                        XAIKeywordSpan(
+                            text_snippet="Revenue",
+                            start_char=0,
+                            end_char=7,
+                            importance_score=0.12,
+                        ),
+                        XAIKeywordSpan(
+                            text_snippet="expectations",
+                            start_char=29,
+                            end_char=41,
+                            importance_score=0.10,
+                        ),
+                    ],
                 )
             ],
             limitations=[
@@ -258,7 +271,16 @@ def test_news_intake_worker_and_status_flow(monkeypatch) -> None:
     assert result_payload["result"]["xai_display"]["evidence"][0]["excerpt"] == (
         "Revenue growth stayed ahead of expectations."
     )
-    assert result_payload["result"]["xai_display"]["evidence"][0]["keywords"] == []
+    assert result_payload["result"]["xai_display"]["evidence"][0]["keywords"] == [
+        "Revenue",
+        "expectations",
+    ]
+    assert result_payload["result"]["xai_display"]["evidence"][0]["keyword_spans"][0] == {
+        "text": "Revenue",
+        "start_char": 0,
+        "end_char": 7,
+        "importance_score": 0.12,
+    }
     assert result_payload["result"]["xai_display"]["evidence"][0]["sentiment_signal"] == "bullish"
     assert result_payload["result"]["localized"] is None
     assert result_payload["result"]["xai"]["highlights"][0]["excerpt"] == (
