@@ -37,6 +37,7 @@ class AppSettings:
     gemini_summary_soft_char_limit: int
     gemini_summary_hard_char_limit: int
     gemini_translation_char_limit: int
+    localized_content_char_limit: int
     localized_xai_highlight_limit: int
     alerts_enabled: bool
     sentiment_only_alerts: bool
@@ -99,6 +100,7 @@ def get_settings() -> AppSettings:
         gemini_summary_soft_char_limit=int(os.getenv("GEMINI_SUMMARY_SOFT_CHAR_LIMIT", "3500")),
         gemini_summary_hard_char_limit=int(os.getenv("GEMINI_SUMMARY_HARD_CHAR_LIMIT", "6500")),
         gemini_translation_char_limit=int(os.getenv("GEMINI_TRANSLATION_CHAR_LIMIT", "1200")),
+        localized_content_char_limit=int(os.getenv("GENAI_LOCALIZED_CONTENT_CHAR_LIMIT", "700")),
         localized_xai_highlight_limit=int(os.getenv("GENAI_LOCALIZED_XAI_HIGHLIGHT_LIMIT", "2")),
         alerts_enabled=_env_flag("GENAI_ALERTS_ENABLED", default=True),
         sentiment_only_alerts=_env_flag("GENAI_SENTIMENT_ONLY_ALERTS", default=False),

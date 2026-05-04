@@ -64,7 +64,7 @@ def build_enrichment_storage_payload(
     )
     localized = _build_stored_localized_content(
         title=title,
-        content_text=cleaned_text_normalized,
+        content_text=_build_localized_content_excerpt(cleaned_text_normalized),
         summary_3lines=normalized_summary,
         sentiment_label=stored_sentiment.label if stored_sentiment is not None else None,
         xai_result=xai_result,
@@ -130,6 +130,22 @@ def _build_cleaned_text_preview(cleaned_text: str) -> str | None:
         return None
     preview_limit = 1200
     return cleaned_text[:preview_limit]
+
+
+def _build_localized_content_excerpt(cleaned_text: str) -> str | None:
+    if not cleaned_text:
+        return None
+
+    limit = max(0, get_settings().localized_content_char_limit)
+    if limit <= 0:
+        return None
+
+    normalized = " ".join(cleaned_text.split())
+    if len(normalized) <= limit:
+        return normalized
+
+    excerpt = normalized[:limit].rsplit(" ", 1)[0].rstrip(",;:-")
+    return excerpt or normalized[:limit]
 
 
 def _build_stored_localized_content(
