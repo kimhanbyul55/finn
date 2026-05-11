@@ -81,6 +81,13 @@ def build_localized_content(
     allow_gemini: bool = True,
 ) -> LocalizedArticleContent | None:
     limited_xai = _limit_xai_payload(xai, highlight_limit=xai_highlight_limit)
+    fallback_payload = _build_source_localized_fallback(
+        title=title,
+        content_text=content_text,
+        summary_3lines=summary_3lines,
+        xai=limited_xai,
+        sentiment_label=sentiment_label,
+    )
     translations = _translate_localized_payload(
         title=title,
         content_text=content_text,
@@ -90,29 +97,31 @@ def build_localized_content(
         allow_gemini=allow_gemini,
     )
     if translations is None:
-        logger.warning("Gemini translation unavailable; localized payload will be empty.")
-        return None
+        logger.warning("Gemini translation unavailable; preserving source localized payload.")
+        return fallback_payload
 
     translated_title = translations.get("title", "").strip()
-    if not translated_title and _looks_already_korean(title):
+    if not translated_title:
         translated_title = title.strip()
     if not translated_title.strip():
-        logger.warning("Gemini translation produced empty title; localized payload will be empty.")
-        return None
+        logger.warning("Gemini translation produced empty title; preserving source title.")
+        translated_title = title.strip()
 
     translated_summary: list[SummaryLine] = []
     for line in summary_3lines:
         translated_text = translations.get(f"summary_{line.line_number}", "").strip()
+        if not translated_text:
+            translated_text = line.text.strip()
         if translated_text:
-            translated_summary.append(
-                SummaryLine(
-                    line_number=line.line_number,
-                    text=translated_text,
-                )
-            )
+            translated_summary.append(SummaryLine(line_number=line.line_number, text=translated_text))
 
     translated_xai = _translate_xai_payload(limited_xai, translations=translations)
-    translated_content = translations.get("content", "").strip() or None
+    if translated_xai is None:
+        translated_xai = limited_xai
+    translated_content = (
+        translations.get("content", "").strip()
+        or (content_text.strip() if content_text and content_text.strip() else None)
+    )
 
     return LocalizedArticleContent(
         language="ko",
@@ -120,6 +129,29 @@ def build_localized_content(
         content=translated_content,
         summary_3lines=translated_summary,
         xai=translated_xai,
+        sentiment_label=_SENTIMENT_LABELS_KO.get(sentiment_label),
+        ticker_box_labels=dict(_TICKER_BOX_LABELS_KO),
+    )
+
+
+def _build_source_localized_fallback(
+    *,
+    title: str,
+    content_text: str | None,
+    summary_3lines: list[SummaryLine],
+    xai: XAIPayload | None,
+    sentiment_label: SentimentLabel | None,
+) -> LocalizedArticleContent:
+    return LocalizedArticleContent(
+        language="ko",
+        title=title.strip(),
+        content=(content_text.strip() if content_text and content_text.strip() else None),
+        summary_3lines=[
+            SummaryLine(line_number=line.line_number, text=line.text.strip())
+            for line in summary_3lines
+            if line.text.strip()
+        ],
+        xai=xai,
         sentiment_label=_SENTIMENT_LABELS_KO.get(sentiment_label),
         ticker_box_labels=dict(_TICKER_BOX_LABELS_KO),
     )

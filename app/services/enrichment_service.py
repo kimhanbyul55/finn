@@ -1,5 +1,7 @@
 import asyncio
 
+from fastapi import HTTPException
+
 from app.core import get_settings
 from app.services.direct_enrichment_job_service import DirectEnrichmentJobService
 from app.repositories import EnrichmentRepository, create_repository
@@ -80,14 +82,17 @@ class EnrichmentService:
             storage_payload = await self.direct_enrichment_job_service.submit_and_wait(payload)
             return build_api_enrichment_response(storage_payload)
         if payload.has_direct_text:
-            storage_payload = await asyncio.to_thread(
+            storage_payload = await self._run_orchestrator_with_timeout(
                 self.orchestrator.run_with_text,
                 payload,
                 article_text=payload.article_text,
                 summary_text=payload.summary_text,
             )
         else:
-            storage_payload = await asyncio.to_thread(self.orchestrator.run, payload)
+            storage_payload = await self._run_orchestrator_with_timeout(
+                self.orchestrator.run,
+                payload,
+            )
         return build_api_enrichment_response(storage_payload)
 
     async def enrich_article_text(
@@ -101,13 +106,29 @@ class EnrichmentService:
         if settings.use_worker_backed_direct_enrichment:
             storage_payload = await self.direct_enrichment_job_service.submit_and_wait(payload)
             return build_api_enrichment_response(storage_payload)
-        storage_payload = await asyncio.to_thread(
+        storage_payload = await self._run_orchestrator_with_timeout(
             self.orchestrator.run_with_text,
             payload,
             article_text=payload.article_text,
             summary_text=payload.summary_text,
         )
         return build_api_enrichment_response(storage_payload)
+
+    async def _run_orchestrator_with_timeout(self, callable_obj, *args, **kwargs):
+        timeout_seconds = max(0.1, settings.pipeline_timeout_seconds)
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(callable_obj, *args, **kwargs),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError as exc:
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    "Enrichment pipeline timed out before completion. "
+                    "Try reducing article size or retrying via worker-backed mode."
+                ),
+            ) from exc
 
     async def _get_reusable_completed_result(
         self,
@@ -159,6 +180,8 @@ def build_api_enrichment_response(
         mixed_flags=_build_mixed_flags(mixed_result),
         status=_map_overall_status(payload.analysis_status, payload.analysis_outcome),
         outcome=payload.analysis_outcome.value,
+        pipeline_trace_id=payload.pipeline_trace_id,
+        failure_code=payload.failure_code,
         analyzed_at=payload.analyzed_at,
         cleaned_text_char_count=payload.cleaned_text_char_count,
         cleaned_text_preview=payload.cleaned_text_preview,

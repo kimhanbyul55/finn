@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from app.core import get_settings
 from app.core.logging import get_logger, log_event
@@ -50,13 +51,19 @@ class EnrichmentOrchestrator:
         self._include_xai = settings.enable_inline_xai if include_xai is None else include_xai
 
     def run(self, request: ArticleEnrichmentRequest) -> EnrichmentStoragePayload:
+        pipeline_trace_id = str(uuid4())
         with gemini_log_context(
             news_id=request.news_id,
             link=str(request.link),
             source=request.source,
             tickers=request.ticker,
+            pipeline_trace_id=pipeline_trace_id,
         ):
-            return self._run_pipeline(request=request, provided_text=None)
+            return self._run_pipeline(
+                request=request,
+                provided_text=None,
+                pipeline_trace_id=pipeline_trace_id,
+            )
 
     def run_with_text(
         self,
@@ -66,11 +73,13 @@ class EnrichmentOrchestrator:
         summary_text: str | None = None,
     ) -> EnrichmentStoragePayload:
         provided_text = (article_text or "").strip() or (summary_text or "").strip() or None
+        pipeline_trace_id = str(uuid4())
         with gemini_log_context(
             news_id=request.news_id,
             link=str(request.link),
             source=request.source,
             tickers=request.ticker,
+            pipeline_trace_id=pipeline_trace_id,
             text_source=(
                 ArticleTextSource.PROVIDED_ARTICLE_TEXT.value
                 if article_text and article_text.strip()
@@ -80,6 +89,7 @@ class EnrichmentOrchestrator:
             return self._run_pipeline(
                 request=request,
                 provided_text=provided_text,
+                pipeline_trace_id=pipeline_trace_id,
                 text_source=(
                     ArticleTextSource.PROVIDED_ARTICLE_TEXT
                     if article_text and article_text.strip()
@@ -92,6 +102,7 @@ class EnrichmentOrchestrator:
         *,
         request: ArticleEnrichmentRequest,
         provided_text: str | None,
+        pipeline_trace_id: str,
         text_source: ArticleTextSource | None = None,
     ) -> EnrichmentStoragePayload:
         analyzed_at = datetime.now(timezone.utc)
@@ -101,6 +112,7 @@ class EnrichmentOrchestrator:
             logging.INFO,
             "enrichment_started",
             news_id=request.news_id,
+            pipeline_trace_id=pipeline_trace_id,
             link=str(request.link),
             tickers=request.ticker,
         )
@@ -169,6 +181,7 @@ class EnrichmentOrchestrator:
         payload = self._build_payload(
             request=request,
             analyzed_at=analyzed_at,
+            pipeline_trace_id=pipeline_trace_id,
             tracker=tracker,
             fetch_result=fetch_result,
             cleaned_text=cleaned_text,
@@ -188,6 +201,7 @@ class EnrichmentOrchestrator:
             logging.INFO,
             "enrichment_finished",
             news_id=request.news_id,
+            pipeline_trace_id=pipeline_trace_id,
             analysis_status=final_payload.analysis_status.value,
             analysis_outcome=final_payload.analysis_outcome.value,
             error_count=len(final_payload.errors),
@@ -432,6 +446,25 @@ class EnrichmentOrchestrator:
         tracker: PipelineStatusTracker,
     ):
         tracker.start(PipelineStageName.SENTIMENT)
+        if len(cleaned_text) > settings.sentiment_max_input_chars:
+            message = (
+                "Skipped sentiment analysis because cleaned text exceeded the configured "
+                f"limit ({settings.sentiment_max_input_chars} chars)."
+            )
+            log_event(
+                logger,
+                logging.WARNING,
+                "sentiment_inference_skipped_input_too_large",
+                news_id=request.news_id,
+                cleaned_text_length=len(cleaned_text),
+                max_input_chars=settings.sentiment_max_input_chars,
+            )
+            tracker.fail(
+                PipelineStageName.SENTIMENT,
+                message,
+                fatal=False,
+            )
+            return None
         try:
             sentiment_result = analyze_sentiment(
                 title=request.title,
@@ -480,6 +513,24 @@ class EnrichmentOrchestrator:
             tracker.skip(
                 PipelineStageName.XAI,
                 "Skipped because the configured XAI backend is disabled.",
+            )
+            return None
+        if len(cleaned_text) > settings.xai_max_input_chars:
+            message = (
+                "Skipped XAI because cleaned text exceeded the configured "
+                f"limit ({settings.xai_max_input_chars} chars)."
+            )
+            log_event(
+                logger,
+                logging.WARNING,
+                "xai_skipped_input_too_large",
+                news_id=request.news_id,
+                cleaned_text_length=len(cleaned_text),
+                max_input_chars=settings.xai_max_input_chars,
+            )
+            tracker.skip(
+                PipelineStageName.XAI,
+                message,
             )
             return None
         try:
@@ -589,6 +640,7 @@ class EnrichmentOrchestrator:
         *,
         request: ArticleEnrichmentRequest,
         analyzed_at: datetime,
+        pipeline_trace_id: str,
         tracker: PipelineStatusTracker,
         fetch_result: ArticleFetchResult,
         cleaned_text: str,
@@ -611,6 +663,7 @@ class EnrichmentOrchestrator:
                 link=str(request.link),
                 analysis_status=analysis_status,
                 analysis_outcome=analysis_outcome,
+                pipeline_trace_id=pipeline_trace_id,
                 stage_statuses=tracker.snapshot_stage_statuses(),
                 fetch_result=fetch_result,
                 cleaned_text=cleaned_text,
@@ -648,6 +701,7 @@ class EnrichmentOrchestrator:
                 ticker_mixed=None,
                 analysis_status=analysis_status,
                 analysis_outcome=analysis_outcome,
+                pipeline_trace_id=pipeline_trace_id,
                 analyzed_at=analyzed_at,
                 cleaned_text_available=bool(cleaned_text.strip()),
                 fetch_result=fetch_result,

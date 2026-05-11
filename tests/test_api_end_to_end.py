@@ -267,6 +267,7 @@ def test_news_intake_worker_and_status_flow(monkeypatch) -> None:
     assert result_payload["latest_job"]["status"] == "completed"
     assert result_payload["result"]["status"] == "completed"
     assert result_payload["result"]["outcome"] == "success"
+    assert result_payload["result"]["failure_code"] is None
     assert result_payload["result"]["sentiment"]["label"] == "bullish"
     assert result_payload["result"]["xai_display"]["evidence"][0]["excerpt"] == (
         "Revenue growth stayed ahead of expectations."

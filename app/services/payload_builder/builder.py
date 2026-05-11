@@ -6,6 +6,7 @@ import logging
 from app.core.logging import log_event
 from app.schemas.article_fetch import ArticleFetchResult
 from app.schemas.enrichment import (
+    ErrorCode,
     LocalizedArticleContent,
     SentimentLabel,
     SummaryLine,
@@ -42,6 +43,7 @@ def build_enrichment_storage_payload(
     link: str,
     analysis_status: AnalysisStatus,
     analysis_outcome: AnalysisOutcome,
+    pipeline_trace_id: str | None = None,
     stage_statuses: list[PipelineStageResult],
     fetch_result: ArticleFetchResult | None = None,
     cleaned_text: str | None = None,
@@ -101,6 +103,13 @@ def build_enrichment_storage_payload(
         ticker_mixed=ticker_mixed,
         analysis_status=analysis_status,
         analysis_outcome=analysis_outcome,
+        pipeline_trace_id=pipeline_trace_id,
+        failure_code=_derive_failure_code(
+            analysis_status=analysis_status,
+            analysis_outcome=analysis_outcome,
+            errors=aggregated_errors,
+            fetch_result=fetch_result,
+        ),
         analyzed_at=_normalize_timestamp(analyzed_at),
         cleaned_text_char_count=len(cleaned_text_normalized),
         cleaned_text_preview=_build_cleaned_text_preview(cleaned_text_normalized),
@@ -117,6 +126,56 @@ def build_enrichment_storage_payload(
         ),
         errors=aggregated_errors,
     )
+
+
+def _derive_failure_code(
+    *,
+    analysis_status: AnalysisStatus,
+    analysis_outcome: AnalysisOutcome,
+    errors: list[StoragePayloadError],
+    fetch_result: ArticleFetchResult | None,
+) -> str | None:
+    if analysis_outcome == AnalysisOutcome.SUCCESS:
+        return None
+
+    if analysis_status == AnalysisStatus.FETCH_FAILED:
+        if fetch_result is not None and fetch_result.retryable:
+            return ErrorCode.ARTICLE_FETCH_RETRYABLE.value
+        return ErrorCode.ARTICLE_FETCH_FAILED.value
+
+    status_mapping: dict[AnalysisStatus, ErrorCode] = {
+        AnalysisStatus.CLEAN_FAILED: ErrorCode.TEXT_CLEAN_FAILED,
+        AnalysisStatus.VALIDATE_FAILED: ErrorCode.ARTICLE_TEXT_INVALID,
+        AnalysisStatus.SUMMARIZE_FAILED: ErrorCode.SUMMARY_GENERATION_FAILED,
+        AnalysisStatus.SENTIMENT_FAILED: ErrorCode.SENTIMENT_ANALYSIS_FAILED,
+        AnalysisStatus.XAI_FAILED: ErrorCode.XAI_EXTRACTION_FAILED,
+        AnalysisStatus.MIXED_DETECTION_FAILED: ErrorCode.MIXED_SIGNAL_DETECTION_FAILED,
+        AnalysisStatus.BUILD_PAYLOAD_FAILED: ErrorCode.PAYLOAD_BUILD_FAILED,
+        AnalysisStatus.PERSIST_FAILED: ErrorCode.RESULT_PERSIST_FAILED,
+    }
+    mapped = status_mapping.get(analysis_status)
+    if mapped is not None:
+        return mapped.value
+
+    if errors:
+        stage_mapping: dict[PipelineStageName, ErrorCode] = {
+            PipelineStageName.FETCH: ErrorCode.ARTICLE_FETCH_FAILED,
+            PipelineStageName.CLEAN: ErrorCode.TEXT_CLEAN_FAILED,
+            PipelineStageName.VALIDATE: ErrorCode.ARTICLE_TEXT_INVALID,
+            PipelineStageName.SUMMARIZE: ErrorCode.SUMMARY_GENERATION_FAILED,
+            PipelineStageName.SENTIMENT: ErrorCode.SENTIMENT_ANALYSIS_FAILED,
+            PipelineStageName.XAI: ErrorCode.XAI_EXTRACTION_FAILED,
+            PipelineStageName.MIXED_DETECTION: ErrorCode.MIXED_SIGNAL_DETECTION_FAILED,
+            PipelineStageName.BUILD_PAYLOAD: ErrorCode.PAYLOAD_BUILD_FAILED,
+            PipelineStageName.PERSIST: ErrorCode.RESULT_PERSIST_FAILED,
+        }
+        mapped_from_stage = stage_mapping.get(errors[0].stage)
+        if mapped_from_stage is not None:
+            return mapped_from_stage.value
+
+    if analysis_outcome in {AnalysisOutcome.PARTIAL_SUCCESS, AnalysisOutcome.FATAL_FAILURE}:
+        return ErrorCode.UNKNOWN_FAILURE.value
+    return None
 
 
 def _normalize_summary_lines(summary_3lines: list[str] | None) -> list[str]:

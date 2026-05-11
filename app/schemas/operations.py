@@ -36,6 +36,22 @@ class OperationalStatsResponse(SchemaModel):
     total_jobs: int = Field(..., ge=0)
     total_fetch_failures: int = Field(..., ge=0)
     retryable_fetch_failures: int = Field(..., ge=0)
+    summarize_failed_count: int = Field(default=0, ge=0)
+    timeout_failure_count: int = Field(default=0, ge=0)
+    gemini_rate_limited_count: int = Field(default=0, ge=0)
+    summarize_failed_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    timeout_failure_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    gemini_rate_limited_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    average_cleaned_to_raw_ratio: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Average cleaned_text_char_count/raw_text_length ratio across samples with raw text.",
+    )
+    low_preservation_count: int = Field(
+        default=0,
+        ge=0,
+        description="Count of samples with cleaned/raw ratio below 0.30.",
+    )
     job_status_counts: list[CountMetric] = Field(default_factory=list)
     analysis_status_counts: list[CountMetric] = Field(default_factory=list)
     extraction_source_counts: list[CountMetric] = Field(default_factory=list)

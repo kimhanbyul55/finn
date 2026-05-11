@@ -1510,6 +1510,11 @@ def _build_operational_stats(
     domain_failure_counts: dict[str, tuple[int, int]] = {}
     domain_outcome_counts: dict[str, tuple[int, int, int, int, int]] = {}
     job_status_counts: dict[str, int] = {}
+    summarize_failed_count = 0
+    timeout_failure_count = 0
+    gemini_rate_limited_count = 0
+    cleaned_to_raw_ratios: list[float] = []
+    low_preservation_count = 0
 
     for job in jobs:
         job_status_counts[job.status.value] = job_status_counts.get(job.status.value, 0) + 1
@@ -1517,13 +1522,30 @@ def _build_operational_stats(
     for enrichment in enrichments:
         analysis_key = enrichment.analysis_status.value
         analysis_status_counts[analysis_key] = analysis_status_counts.get(analysis_key, 0) + 1
+        if enrichment.analysis_status == AnalysisStatus.SUMMARIZE_FAILED:
+            summarize_failed_count += 1
+        elif enrichment.failure_code == "summary_generation_failed":
+            summarize_failed_count += 1
 
         fetch_result = enrichment.fetch_result
+        if fetch_result is not None:
+            raw_length = len(fetch_result.raw_text or "")
+            if raw_length > 0:
+                ratio = enrichment.cleaned_text_char_count / raw_length
+                cleaned_to_raw_ratios.append(ratio)
+                if ratio < 0.30:
+                    low_preservation_count += 1
         if fetch_result is not None and fetch_result.extraction_source is not None:
             extraction_key = fetch_result.extraction_source.value
             extraction_source_counts[extraction_key] = (
                 extraction_source_counts.get(extraction_key, 0) + 1
             )
+
+        joined_errors = " ".join(error.message.lower() for error in enrichment.errors)
+        if "timed out" in joined_errors or "timeout" in joined_errors:
+            timeout_failure_count += 1
+        if "rate limit" in joined_errors or "429" in joined_errors:
+            gemini_rate_limited_count += 1
 
         domain_key = (
             fetch_result.publisher_domain
@@ -1569,11 +1591,31 @@ def _build_operational_stats(
             current_retryable_count + (1 if fetch_result.retryable else 0),
         )
 
+    total_results = len(enrichments)
+    average_ratio = (
+        sum(cleaned_to_raw_ratios) / len(cleaned_to_raw_ratios)
+        if cleaned_to_raw_ratios
+        else None
+    )
     return OperationalStatsResponse(
         total_enrichment_results=len(enrichments),
         total_jobs=len(jobs),
         total_fetch_failures=total_fetch_failures,
         retryable_fetch_failures=retryable_fetch_failures,
+        summarize_failed_count=summarize_failed_count,
+        timeout_failure_count=timeout_failure_count,
+        gemini_rate_limited_count=gemini_rate_limited_count,
+        summarize_failed_ratio=(
+            summarize_failed_count / total_results if total_results else 0.0
+        ),
+        timeout_failure_ratio=(
+            timeout_failure_count / total_results if total_results else 0.0
+        ),
+        gemini_rate_limited_ratio=(
+            gemini_rate_limited_count / total_results if total_results else 0.0
+        ),
+        average_cleaned_to_raw_ratio=average_ratio,
+        low_preservation_count=low_preservation_count,
         job_status_counts=_sorted_count_metrics(job_status_counts),
         analysis_status_counts=_sorted_count_metrics(analysis_status_counts),
         extraction_source_counts=_sorted_count_metrics(extraction_source_counts),

@@ -465,7 +465,8 @@ def _evaluate_line_noise(line: str) -> CleaningLineDecision:
         score += 4
         reasons.append("known_boilerplate")
 
-    if _looks_like_table_header(line):
+    table_like = _looks_like_table_header(line)
+    if table_like:
         score += 3
         reasons.append("table_like")
 
@@ -479,25 +480,49 @@ def _evaluate_line_noise(line: str) -> CleaningLineDecision:
     score += family_score
     reasons.extend(family_reasons)
 
-    has_explicit_noise_signal = bool(
+    has_hard_noise_signal = bool(
         matched_boilerplate
-        or promo_score > 0
-        or ui_score > 0
-        or family_score > 0
-        or _AD_TECH_PATTERN.search(compact.lower())
-        or _looks_like_table_header(line)
-        or _is_transcript_speaker_marker_line(line)
-        or _TRANSCRIPT_CUE_PATTERN.match(line.strip())
-        or _URL_ONLY_LINE_PATTERN.match(line)
-        or _SEPARATOR_LINE_PATTERN.match(line)
+        or "separator_line" in reasons
+        or "url_only" in reasons
+        or "transcript_cue" in reasons
+        or "speaker_marker" in reasons
+        or "ad_tech_marker" in reasons
+        or "ui_control_phrase" in reasons
     )
-    if _looks_like_narrative_line(compact) and not has_explicit_noise_signal:
+    if (
+        _looks_like_narrative_line(compact)
+        and not has_hard_noise_signal
+        and promo_score == 0
+        and ui_score == 0
+        and family_score == 0
+        and not table_like
+    ):
         score -= 2
         reasons.append("narrative_bonus")
 
+    # Keep article text safe: drop on hard signals immediately.
+    # Soft heuristic signals (keyword families, table-like shape) only drop when
+    # they combine strongly and the line is not narrative prose.
+    soft_noise_score = 0
+    if promo_score > 0:
+        soft_noise_score += promo_score
+    if ui_score > 0:
+        soft_noise_score += ui_score
+    if family_score > 0:
+        soft_noise_score += family_score
+    if table_like:
+        soft_noise_score += 3
+    is_narrative = _looks_like_narrative_line(compact)
+    drop = (
+        has_hard_noise_signal
+        or (soft_noise_score >= 5 and not is_narrative)
+        or (promo_score >= 3 and family_score >= 3)
+        or ("ui_chrome_keywords" in reasons and len(compact) <= 120)
+    )
+
     return CleaningLineDecision(
         line=line,
-        drop=score >= _NOISE_DROP_SCORE_THRESHOLD,
+        drop=drop,
         score=score,
         reasons=tuple(reasons),
     )

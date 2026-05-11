@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -27,6 +28,7 @@ from app.schemas.sentiment import (
 )
 from app.schemas.storage import AnalysisOutcome, AnalysisStatus
 from app.schemas.xai import XAIResult
+from app.services.orchestrator import pipeline as pipeline_module
 from app.services.orchestrator.pipeline import EnrichmentOrchestrator
 
 
@@ -552,6 +554,7 @@ def test_orchestrator_keeps_xai_when_summary_generation_fails(monkeypatch) -> No
 
     assert payload.analysis_status == AnalysisStatus.COMPLETED_WITH_PARTIAL_RESULTS
     assert payload.analysis_outcome == AnalysisOutcome.PARTIAL_SUCCESS
+    assert payload.failure_code == "summary_generation_failed"
     assert payload.summary_3lines == []
     assert payload.sentiment is not None
     assert payload.xai is not None
@@ -629,3 +632,91 @@ def test_orchestrator_bypasses_strict_validate_filter_to_preserve_article(monkey
         stage.stage.value == "validate" and stage.status.value == "completed"
         for stage in payload.stage_statuses
     )
+
+
+def test_orchestrator_skips_sentiment_when_text_exceeds_sentiment_limit(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.orchestrator.pipeline.settings",
+        replace(
+            pipeline_module.settings,
+            sentiment_max_input_chars=10,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.orchestrator.pipeline.analyze_sentiment",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("Sentiment should be skipped before FinBERT call.")
+        ),
+    )
+
+    repository = InMemoryEnrichmentRepository()
+    orchestrator = EnrichmentOrchestrator(repository=repository, include_xai=True)
+    request = ArticleEnrichmentRequest(
+        news_id="news-sentiment-skip-limit",
+        title="Long text sentiment guard",
+        link="https://example.com/news/sentiment-skip-limit",
+        ticker=["AAPL"],
+    )
+
+    payload = orchestrator.run_with_text(
+        request,
+        article_text="This article body is intentionally longer than ten characters.",
+    )
+
+    sentiment_stage = next(
+        stage for stage in payload.stage_statuses if stage.stage.value == "sentiment"
+    )
+    assert sentiment_stage.status.value == "failed"
+    assert "exceeded the configured limit" in (sentiment_stage.message or "")
+
+
+def test_orchestrator_skips_xai_when_text_exceeds_xai_limit(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.orchestrator.pipeline.settings",
+        replace(
+            pipeline_module.settings,
+            sentiment_max_input_chars=5000,
+            xai_max_input_chars=10,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.orchestrator.pipeline.analyze_sentiment",
+        lambda **kwargs: SentimentResult(
+            label=FinBERTSentimentLabel.POSITIVE,
+            score=40.0,
+            confidence=0.7,
+            probabilities=SentimentProbabilities(
+                positive=0.7,
+                neutral=0.2,
+                negative=0.1,
+            ),
+            aggregation_strategy=AggregationStrategy.WEIGHTED_MEAN,
+            chunk_results=[],
+            disagreement_ratio=0.0,
+            chunk_count=0,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.orchestrator.pipeline.explain_sentiment",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("XAI should be skipped before explain_sentiment call.")
+        ),
+    )
+
+    repository = InMemoryEnrichmentRepository()
+    orchestrator = EnrichmentOrchestrator(repository=repository, include_xai=True)
+    request = ArticleEnrichmentRequest(
+        news_id="news-xai-skip-limit",
+        title="Long text xai guard",
+        link="https://example.com/news/xai-skip-limit",
+        ticker=["AAPL"],
+    )
+
+    payload = orchestrator.run_with_text(
+        request,
+        article_text="This article body is intentionally longer than ten characters.",
+    )
+
+    xai_stage = next(stage for stage in payload.stage_statuses if stage.stage.value == "xai")
+    assert xai_stage.status.value == "skipped"
+    assert "exceeded the configured limit" in (xai_stage.message or "")

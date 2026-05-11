@@ -500,6 +500,17 @@ class ArticleEnrichmentResponse(SchemaModel):
         ...,
         description="Top-level outcome separating success, partial success, and fatal failure.",
     )
+    pipeline_trace_id: str | None = Field(
+        default=None,
+        description="Correlation id shared across pipeline stage logs.",
+    )
+    failure_code: str | None = Field(
+        default=None,
+        description=(
+            "Stable machine-readable failure code for quick diagnosis. "
+            "Can be populated for partial failures as well."
+        ),
+    )
     analyzed_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="When analysis was completed or last updated.",

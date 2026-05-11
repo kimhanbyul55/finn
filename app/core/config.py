@@ -26,6 +26,7 @@ class AppSettings:
     xai_backend: str
     direct_enrichment_wait_timeout_seconds: float
     direct_enrichment_poll_interval_seconds: float
+    pipeline_timeout_seconds: float
     basic_auth_user: str | None
     basic_auth_password: str | None
     gemini_api_key: str | None
@@ -44,6 +45,8 @@ class AppSettings:
     sentiment_alert_min_confidence: float
     sentiment_positive_score_threshold: float
     sentiment_negative_score_threshold: float
+    sentiment_max_input_chars: int
+    xai_max_input_chars: int
     fail_on_suspicious_gpu_runtime: bool
 
     @property
@@ -54,6 +57,9 @@ class AppSettings:
 def get_settings() -> AppSettings:
     """Load application settings from environment variables."""
     running_on_render = _env_flag("RENDER", default=False)
+    running_on_zeabur = bool(
+        os.getenv("ZEABUR_SERVICE_ID") or os.getenv("ZEABUR_PROJECT_ID")
+    )
     return AppSettings(
         database_backend=(
             os.getenv("GENAI_DATABASE_BACKEND")
@@ -74,7 +80,7 @@ def get_settings() -> AppSettings:
         ),
         use_worker_backed_direct_enrichment=_env_flag(
             "GENAI_USE_WORKER_FOR_DIRECT_ENRICHMENT",
-            default=running_on_render,
+            default=(running_on_render or running_on_zeabur),
         ),
         enable_inline_xai=_env_flag(
             "GENAI_ENABLE_INLINE_XAI",
@@ -87,6 +93,7 @@ def get_settings() -> AppSettings:
         direct_enrichment_poll_interval_seconds=float(
             os.getenv("GENAI_DIRECT_ENRICHMENT_POLL_INTERVAL", "0.5")
         ),
+        pipeline_timeout_seconds=float(os.getenv("GENAI_PIPELINE_TIMEOUT_SECONDS", "90")),
         basic_auth_user=os.getenv("BASIC_AUTH_USER"),
         basic_auth_password=os.getenv("BASIC_AUTH_PASSWORD"),
         gemini_api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
@@ -96,7 +103,7 @@ def get_settings() -> AppSettings:
         gemini_summary_model="gemini-2.5-flash-lite",
         gemini_translation_model="gemini-2.5-flash-lite",
         gemini_timeout_seconds=float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20")),
-        gemini_retry_after_max_seconds=float(os.getenv("GEMINI_RETRY_AFTER_MAX_SECONDS", "0")),
+        gemini_retry_after_max_seconds=float(os.getenv("GEMINI_RETRY_AFTER_MAX_SECONDS", "15")),
         gemini_summary_soft_char_limit=int(os.getenv("GEMINI_SUMMARY_SOFT_CHAR_LIMIT", "3500")),
         gemini_summary_hard_char_limit=int(os.getenv("GEMINI_SUMMARY_HARD_CHAR_LIMIT", "6500")),
         gemini_translation_char_limit=int(os.getenv("GEMINI_TRANSLATION_CHAR_LIMIT", "1200")),
@@ -113,6 +120,8 @@ def get_settings() -> AppSettings:
         sentiment_negative_score_threshold=float(
             os.getenv("GENAI_SENTIMENT_NEGATIVE_SCORE_THRESHOLD", "-8")
         ),
+        sentiment_max_input_chars=int(os.getenv("GENAI_SENTIMENT_MAX_INPUT_CHARS", "12000")),
+        xai_max_input_chars=int(os.getenv("GENAI_XAI_MAX_INPUT_CHARS", "9000")),
         fail_on_suspicious_gpu_runtime=_env_flag(
             "GENAI_FAIL_ON_SUSPICIOUS_GPU_RUNTIME",
             default=False,

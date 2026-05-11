@@ -10,7 +10,7 @@ from app.services.translation.gemini_translation_service import _TranslationTask
 from app.services.translation.gemini_translation_service import build_localized_content
 
 
-def test_build_localized_content_returns_none_without_api_key(monkeypatch) -> None:
+def test_build_localized_content_preserves_source_payload_without_api_key(monkeypatch) -> None:
     _cached_translation_batch_completion.cache_clear()
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
@@ -38,7 +38,10 @@ def test_build_localized_content_returns_none_without_api_key(monkeypatch) -> No
         tickers=["AAPL"],
     )
 
-    assert localized is None
+    assert localized is not None
+    assert localized.title == "Apple raises guidance"
+    assert len(localized.summary_3lines) == 3
+    assert localized.xai is not None
 
 
 def test_build_localized_content_uses_Gemini_when_api_key_present(monkeypatch) -> None:
@@ -161,7 +164,7 @@ def test_build_localized_content_translates_article_content(monkeypatch) -> None
     assert localized.content == "애플은 매출이 12% 증가했고 가이던스를 상향했다고 밝혔다."
 
 
-def test_build_localized_content_returns_none_when_gemini_is_disabled(monkeypatch) -> None:
+def test_build_localized_content_preserves_source_payload_when_gemini_is_disabled(monkeypatch) -> None:
     _cached_translation_batch_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
@@ -183,7 +186,13 @@ def test_build_localized_content_returns_none_when_gemini_is_disabled(monkeypatc
         allow_gemini=False,
     )
 
-    assert localized is None
+    assert localized is not None
+    assert localized.title == "Apple raises guidance"
+    assert [line.text for line in localized.summary_3lines] == [
+        "Revenue grew 12%.",
+        "Margins improved.",
+        "Guidance was raised.",
+    ]
 
 
 def test_build_localized_content_reuses_cached_Gemini_translations(monkeypatch) -> None:
@@ -347,7 +356,12 @@ def test_build_localized_content_keeps_partial_summary_when_some_lines_fail(monk
 
     assert localized is not None
     assert localized.title == "애플이 가이던스를 상향했다"
-    assert [line.line_number for line in localized.summary_3lines] == [1, 3]
+    assert [line.line_number for line in localized.summary_3lines] == [1, 2, 3]
+    assert [line.text for line in localized.summary_3lines] == [
+        "매출은 12% 증가했다",
+        "Margins improved.",
+        "가이던스를 상향했다",
+    ]
 
 
 def test_parse_translation_batch_output_accepts_json_payload() -> None:
