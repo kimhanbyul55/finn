@@ -148,6 +148,14 @@ def build_api_enrichment_response(
         xai=xai_payload,
         xai_display=xai_display_payload,
         localized=localized,
+        headline_ko=localized.title if localized is not None else None,
+        content_ko=localized.content if localized is not None else None,
+        summary_3lines_ko=(
+            [line.text for line in localized.summary_3lines]
+            if localized is not None
+            else []
+        ),
+        xai_ko=localized.xai if localized is not None else None,
         mixed_flags=_build_mixed_flags(mixed_result),
         status=_map_overall_status(payload.analysis_status, payload.analysis_outcome),
         outcome=payload.analysis_outcome.value,

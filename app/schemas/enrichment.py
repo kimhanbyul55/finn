@@ -474,6 +474,23 @@ class ArticleEnrichmentResponse(SchemaModel):
         default=None,
         description="Localized display payload for UI consumers.",
     )
+    headline_ko: str | None = Field(
+        default=None,
+        description="Compatibility field for localized.title.",
+    )
+    content_ko: str | None = Field(
+        default=None,
+        description="Compatibility field for localized.content display excerpt.",
+    )
+    summary_3lines_ko: list[str] = Field(
+        default_factory=list,
+        max_length=3,
+        description="Compatibility field for localized.summary_3lines text values.",
+    )
+    xai_ko: XAIPayload | None = Field(
+        default=None,
+        description="Compatibility field for localized.xai.",
+    )
     mixed_flags: MixedConflictPayload | None = Field(
         default=None,
         description="Mixed/conflict analysis output.",

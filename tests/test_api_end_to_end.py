@@ -313,10 +313,16 @@ def test_news_result_reuses_stored_localized_payload(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["result"]["localized"]["title"] == "회사가 실적 예상치를 웃돌았다"
+    assert body["result"]["headline_ko"] == "회사가 실적 예상치를 웃돌았다"
     assert body["result"]["localized"]["content"] == (
         "회사는 매출 성장이 예상치를 웃돌았고 경영진은 안정적인 수요를 강조했다."
     )
+    assert body["result"]["content_ko"] == (
+        "회사는 매출 성장이 예상치를 웃돌았고 경영진은 안정적인 수요를 강조했다."
+    )
     assert body["result"]["localized"]["summary_3lines"][0]["text"] == "매출 성장이 예상치를 웃돌았다."
+    assert body["result"]["summary_3lines_ko"][0] == "매출 성장이 예상치를 웃돌았다."
+    assert body["result"]["xai_ko"] is None
 
 
 def test_news_intake_reuses_existing_completed_result(monkeypatch) -> None:

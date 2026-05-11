@@ -78,7 +78,7 @@ def get_settings() -> AppSettings:
         ),
         enable_inline_xai=_env_flag(
             "GENAI_ENABLE_INLINE_XAI",
-            default=False,
+            default=True,
         ),
         xai_backend=(os.getenv("GENAI_XAI_BACKEND") or "attention").strip().lower(),
         direct_enrichment_wait_timeout_seconds=float(
