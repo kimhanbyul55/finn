@@ -300,6 +300,49 @@ def test_build_localized_content_retries_missing_translation_keys_once(monkeypat
     assert calls["count"] == 2
 
 
+def test_build_localized_content_returns_none_when_localized_title_is_empty(monkeypatch) -> None:
+    _cached_translation_batch_completion.cache_clear()
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+    monkeypatch.setenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash-lite")
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": (
+                                "title|||\n"
+                                "summary_1|||매출은 12% 증가했다.\n"
+                                "summary_2|||마진은 개선됐다.\n"
+                                "summary_3|||가이던스는 상향됐다."
+                            )}]
+                        }
+                    }
+                ]
+            }
+
+    monkeypatch.setattr("app.services.gemini.client.requests.post", lambda *args, **kwargs: _Response())
+
+    localized = build_localized_content(
+        title="Apple raises guidance",
+        summary_3lines=[
+            SummaryLine(line_number=1, text="Revenue grew 12%."),
+            SummaryLine(line_number=2, text="Margins improved."),
+            SummaryLine(line_number=3, text="Guidance was raised."),
+        ],
+        xai=None,
+        sentiment_label=SentimentLabel.BULLISH,
+        tickers=["AAPL"],
+    )
+
+    assert localized is None
+
+
 def test_build_localized_content_skips_already_korean_summary_lines(monkeypatch) -> None:
     _cached_translation_batch_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")

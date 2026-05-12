@@ -94,6 +94,9 @@ def build_localized_content(
         return None
 
     translated_title = translations.get("title", "").strip()
+    if not translated_title:
+        logger.warning("Gemini translation returned an empty localized title.")
+        return None
 
     translated_summary: list[SummaryLine] = []
     for line in summary_3lines:
