@@ -272,23 +272,22 @@ def _translate_tasks(
     if not prepared_tasks:
         return results
 
-    batch_payload = _build_translation_batch_payload(prepared_tasks)
-    masked = _mask_text(batch_payload, tickers=tickers)
-    translated = _cached_translation_batch_completion(
-        get_settings().gemini_api_base_url,
-        get_settings().gemini_translation_model,
-        masked.text,
-        "translate_localized_payload",
+    _merge_translations_for_tasks(
+        results=results,
+        tasks=prepared_tasks,
+        tickers=tickers,
+        request_label="translate_localized_payload",
     )
-    unmasked = _unmask_text(translated, masked.replacements)
-    parsed = _parse_translation_batch_output(unmasked, prepared_tasks)
-    for task in prepared_tasks:
-        translated_text = parsed.get(task.key, "")
-        polished = _polish_korean_financial_text(translated_text)
-        if _is_usable_korean_translation(polished):
-            results[task.key] = polished
     missing_keys = [task.key for task in prepared_tasks if not results.get(task.key, "").strip()]
     if missing_keys:
+        retry_tasks = [task for task in prepared_tasks if task.key in set(missing_keys)]
+        _merge_translations_for_tasks(
+            results=results,
+            tasks=retry_tasks,
+            tickers=tickers,
+            request_label="translate_localized_payload_repair",
+        )
+        missing_keys = [task.key for task in prepared_tasks if not results.get(task.key, "").strip()]
         logger.warning(
             "Gemini translation left some fields empty after validation.",
             extra={
@@ -297,6 +296,34 @@ def _translate_tasks(
             },
         )
     return results
+
+
+def _merge_translations_for_tasks(
+    *,
+    results: dict[str, str],
+    tasks: list[_TranslationTask],
+    tickers: list[str] | None,
+    request_label: str,
+) -> None:
+    if not tasks:
+        return
+    batch_payload = _build_translation_batch_payload(tasks)
+    masked = _mask_text(batch_payload, tickers=tickers)
+    translated = _cached_translation_batch_completion(
+        get_settings().gemini_api_base_url,
+        get_settings().gemini_translation_model,
+        masked.text,
+        request_label,
+    )
+    unmasked = _unmask_text(translated, masked.replacements)
+    parsed = _parse_translation_batch_output(unmasked, tasks)
+    for task in tasks:
+        translated_text = parsed.get(task.key, "")
+        if "|||" in translated_text:
+            continue
+        polished = _polish_korean_financial_text(translated_text)
+        if _is_usable_korean_translation(polished):
+            results[task.key] = polished
 
 
 def _build_translation_batch_payload(tasks: Iterable[_TranslationTask]) -> str:
@@ -365,7 +392,7 @@ def _parse_translation_key_spans(
         return {}
     key_group = "|".join(re.escape(key) for key in keys)
     pattern = re.compile(
-        rf"(?P<key>{key_group})\s*\|\|\|\s*(?P<text>.*?)(?=(?:{key_group})\s*\|\|\||\Z)",
+        rf"(?P<key>{key_group})\s*\|\|\|\s*(?P<text>.*?)(?=(?:{key_group})\s*\|\|\||\s+[A-Za-z0-9_]+\s*\|\|\||\Z)",
         re.DOTALL,
     )
     parsed: dict[str, str] = {}
