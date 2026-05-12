@@ -54,7 +54,9 @@ def _build_response_text(*, missing_keys: set[str]) -> str:
         )
     ],
 )
-def test_release_regression_localized_payload_never_collapses(monkeypatch, missing_keys: set[str]) -> None:
+def test_release_regression_localized_payload_respects_missing_translation_fields(
+    monkeypatch, missing_keys: set[str]
+) -> None:
     _cached_translation_batch_completion.cache_clear()
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
@@ -106,10 +108,22 @@ def test_release_regression_localized_payload_never_collapses(monkeypatch, missi
 
     assert localized is not None
     assert localized.title.strip()
-    assert len(localized.summary_3lines) == 3
-    assert all(line.text.strip() for line in localized.summary_3lines)
-    assert localized.content is not None and localized.content.strip()
-    assert localized.xai is not None
-    assert localized.xai.explanation.strip()
-    assert localized.xai.highlights and localized.xai.highlights[0].excerpt.strip()
+    summary_by_line = {line.line_number: line.text for line in localized.summary_3lines}
+    for line_number in (1, 2, 3):
+        key = f"summary_{line_number}"
+        if key in missing_keys:
+            assert line_number not in summary_by_line
+        else:
+            assert summary_by_line.get(line_number, "").strip()
 
+    if "content" in missing_keys:
+        assert localized.content is None
+    else:
+        assert localized.content is not None and localized.content.strip()
+
+    if "xai_explanation" in missing_keys or "xai_highlight_1" in missing_keys:
+        assert localized.xai is None
+    else:
+        assert localized.xai is not None
+        assert localized.xai.explanation.strip()
+        assert localized.xai.highlights and localized.xai.highlights[0].excerpt.strip()
